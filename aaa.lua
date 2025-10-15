@@ -12431,13 +12431,16 @@ end
 
 -- Modern Sidebar Component
 function Components.ModernSidebar(props)
+    local isMobile = UserInputService and UserInputService.TouchEnabled
+    local baseCollapsed = 60
+    local baseExpanded = 200
+    -- On mobile we double logical width so after 0.5 UIScale it visually matches PC
     local sidebarWidth = {
-        collapsed = 60, -- Just icons
-        expanded = 200, -- Icons + labels
+        collapsed = isMobile and (baseCollapsed * 2) or baseCollapsed,
+        expanded = isMobile and (baseExpanded * 2) or baseExpanded,
     }
 
-    local isMobile = UserInputService and UserInputService.TouchEnabled
-    local isExpanded = isMobile and true or false -- Mobile: start expanded
+    local isExpanded = false -- Start collapsed on all platforms
     local currentTab = nil -- No tab highlighted initially
     local openWindows = props.openWindows or {} -- Access to open windows table
 
@@ -12467,8 +12470,8 @@ function Components.ModernSidebar(props)
     do
         local scaleObj = sidebar:FindFirstChild('UIScale')
         if isMobile and scaleObj then
-            sidebarScale = 1.0
-            scaleObj.Scale = 1.0
+            sidebarScale = 0.5
+            scaleObj.Scale = 0.5
         end
     end
 
@@ -12773,7 +12776,7 @@ function Components.ModernSidebar(props)
             { button = navItem, icon = icon, label = label, data = item }
 
         -- Hover effects
-        bind(navItem.MouseEnter:Connect(function()
+        local function onHoverEnter()
             if item and item.id then
                 pcall(function()
                     -- Always apply size and text effects
@@ -12843,9 +12846,15 @@ function Components.ModernSidebar(props)
                     end
                 end)
             end
+        end
+        bind(navItem.MouseEnter:Connect(onHoverEnter))
+        bind(navItem.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                onHoverEnter()
+            end
         end))
 
-        bind(navItem.MouseLeave:Connect(function()
+        local function onHoverLeave()
             if item and item.id then
                 pcall(function()
                     -- Always reset size and text effects
@@ -12889,6 +12898,12 @@ function Components.ModernSidebar(props)
                     ):Play()
                 end)
             end
+        end
+        bind(navItem.MouseLeave:Connect(onHoverLeave))
+        bind(navItem.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                onHoverLeave()
+            end
         end))
 
         -- Click handler
@@ -12913,7 +12928,7 @@ function Components.ModernSidebar(props)
         end
 
         -- Calculate actual sidebar width with scale
-        local actualSidebarWidth = targetWidth * sidebarScale
+        local actualSidebarWidth = targetWidth * (sidebar:FindFirstChild('UIScale') and sidebar:FindFirstChild('UIScale').Scale or 1)
 
         -- Compact sidebar dimensions
         local targetSize = UDim2.new(0, targetWidth, 0, isSmallViewport() and math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490) or 490)
@@ -12940,6 +12955,14 @@ function Components.ModernSidebar(props)
                     Position = targetPosition,
                 }
             ):Play()
+        end
+
+        -- Update label visibility when toggling
+        brandText.Visible = isExpanded
+        for _, btn in pairs(navButtons or {}) do
+            if btn and btn.label then
+                btn.label.Visible = isExpanded
+            end
         end
 
         -- Move any fullscreen windows to make room for sidebar
