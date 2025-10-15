@@ -881,7 +881,7 @@ function applyResponsiveLayout()
                     local baseCollapsed = isMobile and 120 or 60 -- Mobile uses doubled width
                     local scaleToUse = isMobile and 0.5 or (s.Scale or 1.0)
                     local width = math.floor(baseCollapsed * scaleToUse)
-                    local height = isMobile and 600 or math.min(490, vh - 20)
+                    local height = isMobile and 480 or math.min(490, vh - 20)
                     if disableAnimations then
                         sidebar.Size = UDim2.new(0, width, 0, height)
                     else
@@ -5835,16 +5835,15 @@ function applyConfigTable(cfg, uiRefs)
         if uiRefs and uiRefs.windowScaleSlider then
             uiRefs.windowScaleSlider.Set((windowScale - 0.3) / 1.7)
         end
-        -- Apply scale to all existing windows using UIScale
+        -- Apply scale to all existing windows using UIScale on scaleWrapper
         for windowType, window in pairs(openWindows or {}) do
             if window and window.Parent then
-                local scaleObj = window:FindFirstChild('UIScale')
-                if scaleObj then
-                    scaleObj.Scale = windowScale
-                else
-                    local newScaleObj = Instance.new('UIScale')
-                    newScaleObj.Scale = windowScale
-                    newScaleObj.Parent = window
+                local scaleWrapper = window:FindFirstChild('ScaleWrapper')
+                if scaleWrapper then
+                    local scaleObj = scaleWrapper:FindFirstChild('UIScale')
+                    if scaleObj then
+                        scaleObj.Scale = windowScale
+                    end
                 end
             end
         end
@@ -12490,7 +12489,9 @@ function Components.ModernSidebar(props)
     -- Main sidebar container - Compact design
     local initialWidth = isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed
     -- Increased height to cover Discord (380) and Unload (430) buttons + margins
-    local initialHeight = isMobile and 600 or (Workspace.CurrentCamera and math.min(490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 490
+    -- Unload button: Position Y=430, Height=40, so bottom edge is at Y=470
+    -- Sidebar height: 470 + 10px margin = 480px
+    local initialHeight = isMobile and 480 or (Workspace.CurrentCamera and math.min(490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 490
     local sidebar = New('Frame', {
         Size = UDim2.new(0, initialWidth, 0, initialHeight), -- Height fits viewport on small screens
         Position = (sidebarLocation == 'Right') and UDim2.new(1, -initialWidth - 10, 0, 10)
@@ -12977,7 +12978,7 @@ function Components.ModernSidebar(props)
 
         -- Compact sidebar dimensions
         local isMobile = UserInputService and UserInputService.TouchEnabled
-        local targetHeight = isSmallViewport() and (isMobile and 600 or math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490)) or 490
+        local targetHeight = isSmallViewport() and (isMobile and 480 or math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490)) or 490
         local targetSize = UDim2.new(0, targetWidth, 0, targetHeight)
         local currentLocation = sidebar:GetAttribute('SidebarLocation')
             or sidebarLocation
@@ -13838,7 +13839,7 @@ function Components.ModernSidebar(props)
                 or UDim2.new(0, 10, 0, 10)
             sidebar.Position = targetPos
             local isMobile = UserInputService and UserInputService.TouchEnabled
-            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 600 or 490)
+            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 480 or 490)
             brandText.Visible = false
             unloadLabel.Visible = false
             navContainer.Visible = true
@@ -13868,7 +13869,7 @@ function Components.ModernSidebar(props)
                 end
 
                 local isMobile = UserInputService and UserInputService.TouchEnabled
-            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 600 or 490)
+            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 480 or 490)
                 isExpanded = false
                 -- Ensure all elements are visible when off-screen
                 navContainer.Visible = true
@@ -16738,16 +16739,15 @@ function Components.buildSettingsPage(parent)
         local newScale = math.clamp(0.3 + a * 1.7, 0.3, 2.0) -- 30% to 200%
         windowScale = newScale
         
-        -- Apply scale to all existing windows using UIScale
+        -- Apply scale to all existing windows using UIScale on scaleWrapper
         for windowType, window in pairs(openWindows or {}) do
             if window and window.Parent then
-                local scaleObj = window:FindFirstChild('UIScale')
-                if scaleObj then
-                    scaleObj.Scale = newScale
-                else
-                    local newScaleObj = Instance.new('UIScale')
-                    newScaleObj.Scale = newScale
-                    newScaleObj.Parent = window
+                local scaleWrapper = window:FindFirstChild('ScaleWrapper')
+                if scaleWrapper then
+                    local scaleObj = scaleWrapper:FindFirstChild('UIScale')
+                    if scaleObj then
+                        scaleObj.Scale = newScale
+                    end
                 end
             end
         end
@@ -18065,7 +18065,6 @@ function buildGui()
                 Thickness = 1,
                 Transparency = 0.3,
             }),
-            New('UIScale', { Scale = windowScale or (isMobile and 0.50 or 1.0) }),
         })
 
         -- Store original properties for pop-in animation
@@ -18081,7 +18080,7 @@ function buildGui()
             BorderSizePixel = 0,
             Text = '', -- Empty text since we have a separate title label
             Name = 'TitleBar',
-            Parent = window,
+            Parent = scaleWrapper,
         }, {
             New('UICorner', { CornerRadius = UDim.new(0, 12) }),
         })
@@ -18140,6 +18139,17 @@ function buildGui()
             Parent = titleBar,
         }, {
             New('UICorner', { CornerRadius = UDim.new(0, 6) }),
+        })
+
+        -- Create wrapper frame for UIScale (applies to non-scrollable elements only)
+        local scaleWrapper = New('Frame', {
+            Size = UDim2.new(1, 0, 1, 0),
+            Position = UDim2.new(0, 0, 0, 0),
+            BackgroundTransparency = 1,
+            Name = 'ScaleWrapper',
+            Parent = window,
+        }, {
+            New('UIScale', { Scale = windowScale or (isMobile and 0.50 or 1.0) }),
         })
 
         -- Content area
