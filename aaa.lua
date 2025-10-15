@@ -12449,6 +12449,7 @@ function Components.ModernSidebar(props)
         BorderSizePixel = 0,
         Parent = props.Parent,
         ZIndex = 100,
+        ClipsDescendants = true,
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 16) }), -- Clean rounded corners
         New('UIStroke', {
@@ -12490,7 +12491,8 @@ function Components.ModernSidebar(props)
     local brandIcon = New('TextButton', {
         Name = 'BrandIcon',
         Size = UDim2.new(0, 40, 0, 40),
-        Position = UDim2.new(0, 10, 0, 10),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0, 30),
         BackgroundColor3 = AccentA,
         Text = 'S',
         Font = Enum.Font.GothamBold,
