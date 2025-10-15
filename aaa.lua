@@ -881,7 +881,7 @@ function applyResponsiveLayout()
                     local baseCollapsed = isMobile and 120 or 60 -- Mobile uses doubled width
                     local scaleToUse = isMobile and 0.5 or (s.Scale or 1.0)
                     local width = math.floor(baseCollapsed * scaleToUse)
-                    local height = math.min(isMobile and 520 or 490, vh - 20)
+                    local height = math.min(isMobile and 580 or 490, vh - 20)
                     if disableAnimations then
                         sidebar.Size = UDim2.new(0, width, 0, height)
                     else
@@ -5263,6 +5263,7 @@ function buildConfigTable()
         sidebarScale = sidebarScale or 1.0,
         gameInfoScale = gameInfoScale or 1.0,
         toastScale = toastScale or 1.0,
+        windowScale = windowScale or 1.0,
         -- Brainrot names selection
         selectedBrainrotNames = selectedBrainrotNames or {},
         selectedAutoHitBrainrotNames = selectedAutoHitBrainrotNames or {},
@@ -5812,6 +5813,26 @@ function applyConfigTable(cfg, uiRefs)
         toastScale = cfg.toastScale
         if uiRefs and uiRefs.toastScaleSlider then
             uiRefs.toastScaleSlider.Set(toastScale)
+        end
+    end
+
+    if type(cfg.windowScale) == 'number' then
+        windowScale = cfg.windowScale
+        if uiRefs and uiRefs.windowScaleSlider then
+            uiRefs.windowScaleSlider.Set((windowScale - 0.3) / 1.7)
+        end
+        -- Apply scale to all existing windows
+        for windowType, window in pairs(openWindows or {}) do
+            if window and window.Parent then
+                local scaleObj = window:FindFirstChild('UIScale')
+                if scaleObj then
+                    scaleObj.Scale = windowScale
+                else
+                    local newScaleObj = Instance.new('UIScale')
+                    newScaleObj.Scale = windowScale
+                    newScaleObj.Parent = window
+                end
+            end
         end
     end
 
@@ -12456,7 +12477,7 @@ function Components.ModernSidebar(props)
     -- Main sidebar container - Compact design
     local initialWidth = isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed
     -- Increased height to cover Discord (380) and Unload (430) buttons + margins
-    local initialHeight = (Workspace.CurrentCamera and math.min(isMobile and 520 or 490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or (isMobile and 520 or 490)
+    local initialHeight = (Workspace.CurrentCamera and math.min(isMobile and 580 or 490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or (isMobile and 580 or 490)
     local sidebar = New('Frame', {
         Size = UDim2.new(0, initialWidth, 0, initialHeight), -- Height fits viewport on small screens
         Position = (sidebarLocation == 'Right') and UDim2.new(1, -initialWidth - 10, 0, 10)
@@ -16473,6 +16494,7 @@ function Components.buildSettingsPage(parent)
         end
     end
 
+    local isMobile = UserInputService and UserInputService.TouchEnabled
     local sidebarScaleSlider = Components.Slider({
         Parent = scroll,
         Size = UDim2.new(1, 0, 0, 32),
@@ -16480,6 +16502,7 @@ function Components.buildSettingsPage(parent)
         ValueText = function(s)
             return string.format('%d%%', math.floor(s * 100 + 0.5))
         end,
+        Visible = not isMobile, -- Hide slider on mobile
     })
     sidebarScaleSlider.OnChanged(function(a)
         -- On mobile, make this a no-op to prevent sidebar scale jumps
@@ -16636,6 +16659,43 @@ function Components.buildSettingsPage(parent)
 
     -- Apply correct colors immediately after creation
     toastScaleSlider.updateColors()
+
+    -- Window scale slider
+    local windowScaleSlider = Components.Slider({
+        Parent = scroll,
+        Size = UDim2.new(1, 0, 0, 32),
+        Title = 'Window Scale',
+        ValueText = function(s)
+            return string.format('%d%%', math.floor(s * 100 + 0.5))
+        end,
+    })
+    
+    -- Global window scale variable
+    windowScale = windowScale or (isMobile and 0.55 or 1.0)
+    
+    windowScaleSlider.OnChanged(function(a)
+        local newScale = math.clamp(0.3 + a * 1.7, 0.3, 2.0) -- 30% to 200%
+        windowScale = newScale
+        
+        -- Apply scale to all existing windows
+        for windowType, window in pairs(openWindows or {}) do
+            if window and window.Parent then
+                local scaleObj = window:FindFirstChild('UIScale')
+                if scaleObj then
+                    scaleObj.Scale = newScale
+                else
+                    local newScaleObj = Instance.new('UIScale')
+                    newScaleObj.Scale = newScale
+                    newScaleObj.Parent = window
+                end
+            end
+        end
+    end)
+    
+    -- Initialize slider position
+    windowScaleSlider.Set((windowScale - 0.3) / 1.7)
+    refs.windowScaleSlider = windowScaleSlider
+    windowScaleSlider.updateColors()
 
     -- Theme switcher
     Components.SectionLabel('THEME', scroll)
@@ -17888,6 +17948,7 @@ function buildGui()
         local windowHeight = (size and size.Y.Offset) or 400
         local positionX, positionY
 
+        local isMobile = UserInputService and UserInputService.TouchEnabled
         if currentOpenCount == 0 then
             -- First window: center it
             positionX = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2)
@@ -17902,9 +17963,28 @@ function buildGui()
                 -windowHeight / 2 + offsetY
             )
         end
+        
+        -- Use global window scale for positioning calculations
+        local currentWindowScale = windowScale or (isMobile and 0.55 or 1.0)
+        local scaledWidth = windowWidth * currentWindowScale
+        local scaledHeight = windowHeight * currentWindowScale
+        
+        if currentOpenCount == 0 then
+            positionX = UDim2.new(0.5, -scaledWidth / 2, 0.5, -scaledHeight / 2)
+        else
+            local offsetX = currentOpenCount * 30
+            local offsetY = currentOpenCount * 30
+            positionX = UDim2.new(
+                0.5,
+                -scaledWidth / 2 + offsetX,
+                0.5,
+                -scaledHeight / 2 + offsetY
+            )
+        end
 
         -- Create window
         local isMobile = UserInputService and UserInputService.TouchEnabled
+        local currentWindowScale = windowScale or (isMobile and 0.55 or 1.0)
         local window = New('Frame', {
             Size = size or UDim2.new(0, 600, 0, 400),
             Position = positionX,
@@ -17921,7 +18001,7 @@ function buildGui()
                 Thickness = 1,
                 Transparency = 0.3,
             }),
-            New('UIScale', { Scale = isMobile and 0.4 or 1.0 }), -- 40% scale on mobile
+            New('UIScale', { Scale = currentWindowScale }), -- Use global window scale
         })
 
         -- Store original properties for pop-in animation
@@ -18734,6 +18814,7 @@ function buildGui()
                 uiRefs.sidebarScaleSlider = refs.sidebarScaleSlider
                 uiRefs.gameInfoScaleSlider = refs.gameInfoScaleSlider
                 uiRefs.toastScaleSlider = refs.toastScaleSlider
+                uiRefs.windowScaleSlider = refs.windowScaleSlider
                 -- Add missing button references
                 uiRefs.webhookToggleBtn = refs.webhookToggleBtn
                 uiRefs.keepSidebarBtn = refs.keepSidebarBtn
@@ -18849,6 +18930,12 @@ function buildGui()
                         and refs.toastScaleSlider.updateColors
                     then
                         refs.toastScaleSlider.updateColors()
+                    end
+                    if
+                        refs.windowScaleSlider
+                        and refs.windowScaleSlider.updateColors
+                    then
+                        refs.windowScaleSlider.updateColors()
                     end
                 end
             end
