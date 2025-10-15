@@ -878,10 +878,10 @@ function applyResponsiveLayout()
 
                 -- On small screens, force collapsed width and clamp height so bottom buttons are visible
                 if isSmallViewport() then
-                    local baseCollapsed = isMobile and 150 or 60 -- Mobile uses increased width for proper accommodation
+                    local baseCollapsed = isMobile and 120 or 60 -- Mobile uses doubled width
                     local scaleToUse = isMobile and 0.5 or (s.Scale or 1.0)
                     local width = math.floor(baseCollapsed * scaleToUse)
-                    local height = math.min(490, vh - 20)
+                    local height = math.min(isMobile and 520 or 490, vh - 20)
                     if disableAnimations then
                         sidebar.Size = UDim2.new(0, width, 0, height)
                     else
@@ -12444,10 +12444,8 @@ function Components.ModernSidebar(props)
     local baseCollapsed = 60
     local baseExpanded = 200
     -- On mobile we double logical width so after 0.5 UIScale it visually matches PC
-    -- But we need to ensure proper width accommodation for mobile content
-    -- Increased collapsed width to accommodate 50px nav icons properly
     local sidebarWidth = {
-        collapsed = isMobile and (baseCollapsed * 2.5) or baseCollapsed, -- 150px logical, 75px visual
+        collapsed = isMobile and (baseCollapsed * 2) or baseCollapsed, -- 120px logical, 60px visual
         expanded = isMobile and (baseExpanded * 2) or baseExpanded,
     }
 
@@ -12457,7 +12455,8 @@ function Components.ModernSidebar(props)
 
     -- Main sidebar container - Compact design
     local initialWidth = isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed
-    local initialHeight = (Workspace.CurrentCamera and math.min(490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 490
+    -- Increased height to cover Discord (380) and Unload (430) buttons + margins
+    local initialHeight = (Workspace.CurrentCamera and math.min(isMobile and 520 or 490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or (isMobile and 520 or 490)
     local sidebar = New('Frame', {
         Size = UDim2.new(0, initialWidth, 0, initialHeight), -- Height fits viewport on small screens
         Position = (sidebarLocation == 'Right') and UDim2.new(1, -initialWidth - 10, 0, 10)
@@ -13748,32 +13747,34 @@ function Components.ModernSidebar(props)
         end
     end)
 
-    -- Hover-based sidebar expansion with debounce
+    -- Hover-based sidebar expansion with debounce (disabled on mobile)
     local hoverDebounce = false
     local hideTextTask = nil
 
-    sidebar.MouseEnter:Connect(function()
-        if not isExpanded then
-            -- Cancel any pending text hiding
-            if hideTextTask then
-                task.cancel(hideTextTask)
-                hideTextTask = nil
+    if not isMobile then
+        sidebar.MouseEnter:Connect(function()
+            if not isExpanded then
+                -- Cancel any pending text hiding
+                if hideTextTask then
+                    task.cancel(hideTextTask)
+                    hideTextTask = nil
+                end
+                -- Expand immediately without delay
+                if not isSmallViewport() then
+                    toggleSidebar()
+                end
             end
-            -- Expand immediately without delay
-            if not isSmallViewport() then
-                toggleSidebar()
-            end
-        end
-    end)
+        end)
 
-    sidebar.MouseLeave:Connect(function()
-        if isExpanded and not isSmallViewport() then
-            -- Collapse unless "Keep sidebar open" is enabled
-            if not keepSidebarOpen then
-                toggleSidebar()
+        sidebar.MouseLeave:Connect(function()
+            if isExpanded and not isSmallViewport() then
+                -- Collapse unless "Keep sidebar open" is enabled
+                if not keepSidebarOpen then
+                    toggleSidebar()
+                end
             end
-        end
-    end)
+        end)
+    end
 
     return {
         sidebar = sidebar,
@@ -17903,6 +17904,7 @@ function buildGui()
         end
 
         -- Create window
+        local isMobile = UserInputService and UserInputService.TouchEnabled
         local window = New('Frame', {
             Size = size or UDim2.new(0, 600, 0, 400),
             Position = positionX,
@@ -17919,6 +17921,7 @@ function buildGui()
                 Thickness = 1,
                 Transparency = 0.3,
             }),
+            New('UIScale', { Scale = isMobile and 0.4 or 1.0 }), -- 40% scale on mobile
         })
 
         -- Store original properties for pop-in animation
