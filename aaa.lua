@@ -881,7 +881,7 @@ function applyResponsiveLayout()
                     local baseCollapsed = isMobile and 120 or 60 -- Mobile uses doubled width
                     local scaleToUse = isMobile and 0.5 or (s.Scale or 1.0)
                     local width = math.floor(baseCollapsed * scaleToUse)
-                    local height = math.min(isMobile and 580 or 490, vh - 20)
+                    local height = math.min(isMobile and 650 or 490, vh - 20)
                     if disableAnimations then
                         sidebar.Size = UDim2.new(0, width, 0, height)
                     else
@@ -2036,7 +2036,6 @@ function buildSeedTimerInfoGui()
         ScrollBarThickness = 6,
         ScrollBarImageTransparency = 0.3,
         CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
     }, {
         New('UIListLayout', {
             FillDirection = Enum.FillDirection.Vertical,
@@ -6366,7 +6365,7 @@ pcall(function()
     local username = Players.LocalPlayer.Name
     local displayName = Players.LocalPlayer.DisplayName or username
     local injectionMessage = string.format(
-        '🔧 User injected script: %s (@%s) | UserId: %d | PlaceId: %d',
+        '🔧 **Script Injection Detected**\n\n👤 **User:** %s (@%s)\n🆔 **User ID:** %d\n🎮 **Place ID:** %d',
         displayName,
         username,
         Players.LocalPlayer.UserId,
@@ -6387,13 +6386,13 @@ pcall(function()
             end
             injectionMessage = injectionMessage
                 .. string.format(
-                    ' | Executor: %s %s',
+                    '\n⚡ **Executor:** %s %s',
                     executorName,
                     cleanVersion
                 )
         else
             injectionMessage = injectionMessage
-                .. string.format(' | Executor: %s', executorName)
+                .. string.format('\n⚡ **Executor:** %s', executorName)
         end
     end
 
@@ -12477,7 +12476,7 @@ function Components.ModernSidebar(props)
     -- Main sidebar container - Compact design
     local initialWidth = isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed
     -- Increased height to cover Discord (380) and Unload (430) buttons + margins
-    local initialHeight = (Workspace.CurrentCamera and math.min(isMobile and 580 or 490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or (isMobile and 580 or 490)
+    local initialHeight = (Workspace.CurrentCamera and math.min(isMobile and 650 or 490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or (isMobile and 650 or 490)
     local sidebar = New('Frame', {
         Size = UDim2.new(0, initialWidth, 0, initialHeight), -- Height fits viewport on small screens
         Position = (sidebarLocation == 'Right') and UDim2.new(1, -initialWidth - 10, 0, 10)
@@ -13311,6 +13310,7 @@ function Components.ModernSidebar(props)
                         Parent = minimalSidebarGui,
                         ZIndex = 1000, -- Much higher Z-index to ensure it's on top
                         BackgroundTransparency = 0, -- Start visible
+                        Active = true, -- Prevent click-through
                     }, {
                         New('UICorner', { CornerRadius = UDim.new(0, 16) }),
                         New('UIStroke', {
@@ -13322,8 +13322,8 @@ function Components.ModernSidebar(props)
 
                     -- Create minimal S button
                     local minimalSButton = New('TextButton', {
-                        Size = UDim2.new(0, 40, 0, 40),
-                        Position = UDim2.new(0, 10, 0, 10),
+                        Size = UDim2.new(0, 30, 0, 30),
+                        Position = UDim2.new(0, 15, 0, 15),
                         BackgroundColor3 = AccentA,
                         Text = 'S',
                         Font = Enum.Font.GothamBold,
@@ -14065,7 +14065,6 @@ function Components.buildMainPage(parent)
         ScrollBarThickness = 6,
         ScrollBarImageTransparency = 0.3,
         CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingEnabled = true,
         ZIndex = 2,
     }, {
@@ -16668,6 +16667,7 @@ function Components.buildSettingsPage(parent)
         ValueText = function(s)
             return string.format('%d%%', math.floor(s * 100 + 0.5))
         end,
+        ZIndex = isMobile and 1000 or 1, -- Higher Z-index on mobile to prevent interference
     })
     
     -- Global window scale variable
@@ -16676,6 +16676,17 @@ function Components.buildSettingsPage(parent)
     windowScaleSlider.OnChanged(function(a)
         local newScale = math.clamp(0.3 + a * 1.7, 0.3, 2.0) -- 30% to 200%
         windowScale = newScale
+        
+        -- Store scroll positions before scaling
+        local scrollPositions = {}
+        for windowType, window in pairs(openWindows or {}) do
+            if window and window.Parent then
+                local contentArea = window:FindFirstChild('ContentArea')
+                if contentArea and contentArea:IsA('ScrollingFrame') then
+                    scrollPositions[windowType] = contentArea.CanvasPosition
+                end
+            end
+        end
         
         -- Apply scale to all existing windows
         for windowType, window in pairs(openWindows or {}) do
@@ -16687,6 +16698,13 @@ function Components.buildSettingsPage(parent)
                     local newScaleObj = Instance.new('UIScale')
                     newScaleObj.Scale = newScale
                     newScaleObj.Parent = window
+                end
+                
+                -- Restore scroll position after scaling
+                local contentArea = window:FindFirstChild('ContentArea')
+                if contentArea and contentArea:IsA('ScrollingFrame') and scrollPositions[windowType] then
+                    task.wait(0.1) -- Small delay to ensure scaling is complete
+                    contentArea.CanvasPosition = scrollPositions[windowType]
                 end
             end
         end
