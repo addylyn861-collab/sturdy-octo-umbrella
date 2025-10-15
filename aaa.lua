@@ -375,43 +375,137 @@ local function sendUnloadWebhook()
         local usageTime = math.floor(startTime - (scriptStartTime or startTime))
         
         local username = Players.LocalPlayer.Name
-        local displayName = Players.LocalPlayer.DisplayName
+        local displayName = Players.LocalPlayer.DisplayName or username
         local userId = Players.LocalPlayer.UserId
         
-        -- Get executor info
-        local executorName = 'Unknown'
-        local executorVersion = 'Unknown'
-        
-        if identifyexecutor then
-            executorName = identifyexecutor()
-        elseif getexecutorname then
-            executorName = getexecutorname()
-        elseif syn and syn.getexecutorname then
-            executorName = syn.getexecutorname()
+        -- Get executor info using the same method as injection webhook
+        local function getExecutorInfo()
+            local executorName = 'Unknown'
+            local executorVersion = 'Unknown'
+
+            -- Try identifyexecutor function (primary method)
+            pcall(function()
+                if identifyexecutor then
+                    local name, version = identifyexecutor()
+                    if name then
+                        executorName = name
+                    end
+                    if version then
+                        executorVersion = version
+                    end
+                end
+            end)
+
+            -- Fallback methods if identifyexecutor doesn't work
+            if executorName == 'Unknown' then
+                -- Try getexecutorname
+                pcall(function()
+                    if getexecutorname then
+                        executorName = getexecutorname()
+                    end
+                end)
+            end
+
+            if executorName == 'Unknown' then
+                -- Try syn.get_version for Synapse
+                pcall(function()
+                    if syn and syn.get_version then
+                        executorName = 'Synapse X'
+                        executorVersion = syn.get_version()
+                    end
+                end)
+            end
+
+            if executorName == 'Unknown' then
+                -- Try checking for specific executor globals
+                if KRNL_LOADED then
+                    executorName = 'KRNL'
+                elseif PROTOSMASHER_LOADED then
+                    executorName = 'ProtoSmasher'
+                elseif SENTINEL_LOADED then
+                    executorName = 'Sentinel'
+                elseif getrenv().WRD_LOADED then
+                    executorName = 'WeAreDevs'
+                end
+            end
+
+            return executorName, executorVersion
         end
+
+        local executorName, executorVersion = getExecutorInfo()
         
-        if getexecutorversion then
-            executorVersion = getexecutorversion()
-        elseif syn and syn.getexecutorversion then
-            executorVersion = syn.getexecutorversion()
+        -- Build unload message
+        local unloadMessage = string.format(
+            '**User Unloaded Script**\n**User:** %s (@%s)\n**User ID:** %d\n**Usage Time:** %d seconds',
+            displayName,
+            username,
+            userId,
+            usageTime
+        )
+
+        if executorName ~= 'Unknown' then
+            if executorVersion ~= 'Unknown' then
+                -- Clean up version string
+                local cleanVersion = executorVersion
+                -- Remove "version-" prefix if present
+                if string.sub(cleanVersion, 1, 8) == 'version-' then
+                    cleanVersion = string.sub(cleanVersion, 9)
+                end
+                -- Add "v" only if version doesn't already start with "v"
+                if string.sub(cleanVersion, 1, 1) ~= 'v' then
+                    cleanVersion = 'v' .. cleanVersion
+                end
+                unloadMessage = unloadMessage
+                    .. string.format(
+                        '\n**Executor:** %s %s',
+                        executorName,
+                        cleanVersion
+                    )
+            else
+                unloadMessage = unloadMessage
+                    .. string.format('\n**Executor:** %s', executorName)
+            end
         end
         
         local webhookUrl = 'https://discord.com/api/webhooks/1428083822041366703/KNOQ3fAR41nYuVXqpBpRdzBGlhBFXNIRVn_5u1s2jNPyS2nHqiXw-Hug1xQRFzQPUJrS'
         
         local payload = {
             username = 'Spidey Bot',
-            content = string.format(
-                '**User Unloaded Script**\n**User:** %s (@%s)\n**User ID:** %d\n**Usage Time:** %d seconds\n**Executor:** %s %s',
-                displayName,
-                username,
-                userId,
-                usageTime,
-                executorName,
-                executorVersion
-            )
+            content = unloadMessage,
         }
         
-        HttpService:PostAsync(webhookUrl, HttpService:JSONEncode(payload), Enum.HttpContentType.ApplicationJson)
+        -- Use the same approach as the injection webhook
+        local data = HttpService:JSONEncode(payload)
+        local requestData = {
+            Url = webhookUrl,
+            Method = 'POST',
+            Headers = { ['Content-Type'] = 'application/json' },
+            Body = data,
+        }
+
+        local success = false
+
+        -- Try common executor request functions first
+        if not success and syn and syn.request then
+            success, _ = pcall(syn.request, requestData)
+        end
+        if not success and http_request then
+            success, _ = pcall(http_request, requestData)
+        end
+        if not success and request then
+            success, _ = pcall(request, requestData)
+        end
+
+        -- Fallback to standard HttpService
+        if not success and game:GetService('HttpService') then
+            success, _ = pcall(
+                HttpService.PostAsync,
+                HttpService,
+                webhookUrl,
+                data,
+                Enum.HttpContentType.ApplicationJson
+            )
+        end
     end)
 end
 
