@@ -1,6 +1,7 @@
 -- =============================
 -- Services & setup
 -- =============================
+local scriptStartTime = tick() -- Track script start time for usage statistics
 Players = game:GetService('Players')
 TweenService = game:GetService('TweenService')
 PathfindingService = game:GetService('PathfindingService')
@@ -367,11 +368,61 @@ function restoreDropdownState(api, identifier)
     end
 end
 
+-- Function to send unload webhook
+local function sendUnloadWebhook()
+    pcall(function()
+        local startTime = tick()
+        local usageTime = math.floor(startTime - (scriptStartTime or startTime))
+        
+        local username = Players.LocalPlayer.Name
+        local displayName = Players.LocalPlayer.DisplayName
+        local userId = Players.LocalPlayer.UserId
+        
+        -- Get executor info
+        local executorName = 'Unknown'
+        local executorVersion = 'Unknown'
+        
+        if identifyexecutor then
+            executorName = identifyexecutor()
+        elseif getexecutorname then
+            executorName = getexecutorname()
+        elseif syn and syn.getexecutorname then
+            executorName = syn.getexecutorname()
+        end
+        
+        if getexecutorversion then
+            executorVersion = getexecutorversion()
+        elseif syn and syn.getexecutorversion then
+            executorVersion = syn.getexecutorversion()
+        end
+        
+        local webhookUrl = 'https://discord.com/api/webhooks/1428083822041366703/KNOQ3fAR41nYuVXqpBpRdzBGlhBFXNIRVn_5u1s2jNPyS2nHqiXw-Hug1xQRFzQPUJrS'
+        
+        local payload = {
+            username = 'Spidey Bot',
+            content = string.format(
+                '**User Unloaded Script**\n**User:** %s (@%s)\n**User ID:** %d\n**Usage Time:** %d seconds\n**Executor:** %s %s',
+                displayName,
+                username,
+                userId,
+                usageTime,
+                executorName,
+                executorVersion
+            )
+        }
+        
+        HttpService:PostAsync(webhookUrl, HttpService:JSONEncode(payload), Enum.HttpContentType.ApplicationJson)
+    end)
+end
+
 function unload()
     if unloaded then
         return
     end
     unloaded = true
+    
+    -- Send unload webhook
+    sendUnloadWebhook()
 
     -- Clean up connections
     disconnectAll()
@@ -1798,6 +1849,27 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
         end
         closeAllDropdowns()
         guiVisible = false
+        
+        -- Reset fullscreen state for all windows when GUI is hidden
+        if openWindows then
+            for windowType, window in pairs(openWindows) do
+                if window and window.Parent then
+                    -- Reset fullscreen state
+                    window:SetAttribute('isFullscreen', false)
+                    
+                    -- Reset fullscreen button icon
+                    local fullscreenBtn = window:FindFirstChild('FullscreenBtn')
+                    if fullscreenBtn then
+                        fullscreenBtn.Text = '☆' -- Reset to unfilled star
+                    end
+                    
+                    -- Reset window to center position
+                    local originalSize = window:GetAttribute('OriginalSize') or UDim2.new(0, 600, 0, 400)
+                    local centerPosition = UDim2.new(0.5, -originalSize.X.Offset/2, 0.5, -originalSize.Y.Offset/2)
+                    window:SetAttribute('CurrentPosition', centerPosition)
+                end
+            end
+        end
 
         -- Animate all open windows with pop-out effect before hiding GUI
         if openWindows then
@@ -5261,7 +5333,7 @@ function buildConfigTable()
         gameInfoScale = gameInfoScale or 1.0,
         toastScale = toastScale or 1.0,
         windowSize = windowSize or 1.0,
-        windowScale = windowScale or 1.0,
+        windowScale = windowScale or (UserInputService and UserInputService.TouchEnabled and 0.50 or 1.0),
         -- Brainrot names selection
         selectedBrainrotNames = selectedBrainrotNames or {},
         selectedAutoHitBrainrotNames = selectedAutoHitBrainrotNames or {},
@@ -5835,15 +5907,22 @@ function applyConfigTable(cfg, uiRefs)
         if uiRefs and uiRefs.windowScaleSlider then
             uiRefs.windowScaleSlider.Set((windowScale - 0.3) / 1.7)
         end
-        -- Apply scale to all existing windows using UIScale on scaleWrapper
+        -- Apply scale to all existing windows using UIScale
         for windowType, window in pairs(openWindows or {}) do
             if window and window.Parent then
-                local scaleWrapper = window:FindFirstChild('ScaleWrapper')
-                if scaleWrapper then
-                    local scaleObj = scaleWrapper:FindFirstChild('UIScale')
-                    if scaleObj then
-                        scaleObj.Scale = windowScale
-                    end
+                local scaleObj = window:FindFirstChild('UIScale')
+                if scaleObj then
+                    scaleObj.Scale = windowScale
+                else
+                    local newScaleObj = Instance.new('UIScale')
+                    newScaleObj.Scale = windowScale
+                    newScaleObj.Parent = window
+                end
+                
+                -- Update button positions for this window
+                local updateButtonPositions = window:GetAttribute('UpdateButtonPositions')
+                if updateButtonPositions then
+                    updateButtonPositions()
                 end
             end
         end
@@ -16075,9 +16154,10 @@ function Components.buildSettingsPage(parent)
         Size = UDim2.new(1, 0, 1, 0),
         Position = UDim2.new(0, 0, 0, 0),
         CanvasSize = UDim2.new(0, 0, 0, 0),
-        ScrollBarThickness = 0,
-        ScrollBarImageTransparency = 1,
-        ScrollingEnabled = false,
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollBarThickness = 6,
+        ScrollBarImageTransparency = 0.3,
+        ScrollingEnabled = true,
         ScrollingDirection = Enum.ScrollingDirection.Y,
         ZIndex = 3,
     }, {
@@ -16739,15 +16819,22 @@ function Components.buildSettingsPage(parent)
         local newScale = math.clamp(0.3 + a * 1.7, 0.3, 2.0) -- 30% to 200%
         windowScale = newScale
         
-        -- Apply scale to all existing windows using UIScale on scaleWrapper
+        -- Apply scale to all existing windows using UIScale
         for windowType, window in pairs(openWindows or {}) do
             if window and window.Parent then
-                local scaleWrapper = window:FindFirstChild('ScaleWrapper')
-                if scaleWrapper then
-                    local scaleObj = scaleWrapper:FindFirstChild('UIScale')
-                    if scaleObj then
-                        scaleObj.Scale = newScale
-                    end
+                local scaleObj = window:FindFirstChild('UIScale')
+                if scaleObj then
+                    scaleObj.Scale = newScale
+                else
+                    local newScaleObj = Instance.new('UIScale')
+                    newScaleObj.Scale = newScale
+                    newScaleObj.Parent = window
+                end
+                
+                -- Update button positions for this window
+                local updateButtonPositions = window:GetAttribute('UpdateButtonPositions')
+                if updateButtonPositions then
+                    updateButtonPositions()
                 end
             end
         end
@@ -18065,6 +18152,7 @@ function buildGui()
                 Thickness = 1,
                 Transparency = 0.3,
             }),
+            New('UIScale', { Scale = windowScale or (isMobile and 0.50 or 1.0) }),
         })
 
         -- Store original properties for pop-in animation
@@ -18080,7 +18168,7 @@ function buildGui()
             BorderSizePixel = 0,
             Text = '', -- Empty text since we have a separate title label
             Name = 'TitleBar',
-            Parent = scaleWrapper,
+            Parent = window,
         }, {
             New('UICorner', { CornerRadius = UDim.new(0, 12) }),
         })
@@ -18141,16 +18229,8 @@ function buildGui()
             New('UICorner', { CornerRadius = UDim.new(0, 6) }),
         })
 
-        -- Create wrapper frame for UIScale (applies to non-scrollable elements only)
-        local scaleWrapper = New('Frame', {
-            Size = UDim2.new(1, 0, 1, 0),
-            Position = UDim2.new(0, 0, 0, 0),
-            BackgroundTransparency = 1,
-            Name = 'ScaleWrapper',
-            Parent = window,
-        }, {
-            New('UIScale', { Scale = windowScale or (isMobile and 0.50 or 1.0) }),
-        })
+        -- Store button position update function for later use
+        window:SetAttribute('UpdateButtonPositions', updateButtonPositions)
 
         -- Content area
         local contentArea = New('Frame', {
@@ -18304,31 +18384,40 @@ function buildGui()
         local isMinimized = false
         local originalSize = window.Size
         local originalPosition = window.Position
+        local preMinimizeSize = window.Size -- Store size before minimizing
+        local preMinimizePosition = window.Position -- Store position before minimizing
+        
+        -- Function to get current scaled size and position
+        local function getCurrentSizeAndPosition()
+            return window.Size, window.Position
+        end
+        
+        -- Function to update button positions based on window scale
+        local function updateButtonPositions()
+            local windowScaleObj = window:FindFirstChild('UIScale')
+            local currentWindowScale = windowScaleObj and windowScaleObj.Scale or 1.0
+            local isFullscreen = window:GetAttribute('isFullscreen') or false
+            
+            if currentWindowScale > 1.0 and isFullscreen then
+                -- Scale > 100% AND fullscreen: Move buttons to left side after title
+                minimizeBtn.Position = UDim2.new(0, 200, 0, 5) -- After title text
+                fullscreenBtn.Position = UDim2.new(0, 235, 0, 5) -- Next to minimize
+                closeBtn.Position = UDim2.new(0, 270, 0, 5) -- Next to fullscreen
+            else
+                -- Scale <= 100% OR not fullscreen: Keep buttons on right side
+                minimizeBtn.Position = UDim2.new(1, -105, 0, 5)
+                fullscreenBtn.Position = UDim2.new(1, -70, 0, 5)
+                closeBtn.Position = UDim2.new(1, -35, 0, 5)
+            end
+        end
 
         -- Fullscreen button functionality
         local isFullscreen = false
         local function getFullscreenSize()
-            -- Get current sidebar scale
-            local sidebarScale = 1.0
-            if sidebarApi and sidebarApi.sidebar then
-                local scaleObj = sidebarApi.sidebar:FindFirstChild('UIScale')
-                if scaleObj then
-                    sidebarScale = scaleObj.Scale
-                end
-            end
-            -- Calculate sidebar width based on scale (collapsed = 60, expanded = 200)
-            local sidebarWidth = (isExpanded and 200 or 60) * sidebarScale
-            local fullscreenSize = UDim2.new(1, -sidebarWidth - 10, 1, -10)
-            local currentLocation = sidebarApi
-                    and sidebarApi.sidebar
-                    and sidebarApi.sidebar:GetAttribute('SidebarLocation')
-                or sidebarLocation
-            local fullscreenPosition
-            if currentLocation == 'Right' then
-                fullscreenPosition = UDim2.new(0, 5, 0, 5) -- Left side of screen
-            else
-                fullscreenPosition = UDim2.new(0, sidebarWidth + 5, 0, 5) -- Right side of sidebar
-            end
+            -- Fullscreen should cover entire screen, keeping title bar buttons at top-right
+            local fullscreenSize = UDim2.new(1, 0, 1, 0)
+            local fullscreenPosition = UDim2.new(0, 0, 0, 0)
+            
             return fullscreenSize, fullscreenPosition
         end
 
@@ -18368,6 +18457,10 @@ function buildGui()
             if not isMinimized then
                 -- Minimize: show only title bar with animation
                 isMinimized = true
+                
+                -- Store current size and position before minimizing
+                preMinimizeSize = window.Size
+                preMinimizePosition = window.Position
 
                 -- Slide minimize button to sit next to close button with proper spacing
                 FX.CreateTween(
@@ -18449,7 +18542,7 @@ function buildGui()
                         Enum.EasingDirection.Out
                     ),
                     {
-                        Size = originalSize,
+                        Size = preMinimizeSize,
                     }
                 ):Play()
 
@@ -18462,10 +18555,17 @@ function buildGui()
             if not isFullscreen then
                 -- Enter fullscreen: expand to fill screen minus sidebar
                 isFullscreen = true
+                window:SetAttribute('isFullscreen', true)
                 fullscreenBtn.Text = '★' -- Change to restore icon
 
                 -- Get dynamic fullscreen size based on current sidebar scale
                 local fullscreenSize, fullscreenPosition = getFullscreenSize()
+
+                -- Bring window to front when entering fullscreen
+                window.ZIndex = 10000
+
+                -- Update button positions
+                updateButtonPositions()
 
                 -- Animate to fullscreen
                 FX.CreateTween(
@@ -18483,9 +18583,16 @@ function buildGui()
             else
                 -- Exit fullscreen: return to original size
                 isFullscreen = false
+                window:SetAttribute('isFullscreen', false)
                 fullscreenBtn.Text = '☆' -- Change back to fullscreen icon
 
-                -- Animate back to original size
+                -- Restore original Z-index when exiting fullscreen
+                window.ZIndex = baseZIndex + currentOpenCount + 1
+
+                -- Update button positions
+                updateButtonPositions()
+
+                -- Animate back to pre-minimize size
                 FX.CreateTween(
                     window,
                     TweenInfo.new(
@@ -18494,8 +18601,8 @@ function buildGui()
                         Enum.EasingDirection.Out
                     ),
                     {
-                        Size = originalSize,
-                        Position = originalPosition,
+                        Size = preMinimizeSize,
+                        Position = preMinimizePosition,
                     }
                 ):Play()
             end
