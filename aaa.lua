@@ -850,6 +850,7 @@ end
 -- Responsive layout for mobile/small screens: scale sidebar and clamp window sizes
 function applyResponsiveLayout()
     local vw, vh = getViewport()
+    local isMobile = UserInputService and UserInputService.TouchEnabled
 
     -- Compute target UI scale for sidebar on small viewports
     local targetScale = getMobileSidebarScale()
@@ -865,13 +866,21 @@ function applyResponsiveLayout()
                     s = Instance.new('UIScale')
                     s.Parent = sidebar
                 end
-                local desired = math.min(sidebarScale or 1.0, targetScale)
-                s.Scale = desired
+                
+                -- On mobile, always maintain 50% scale and don't let responsive layout change it
+                if isMobile then
+                    s.Scale = 0.5
+                    sidebarScale = 0.5
+                else
+                    local desired = math.min(sidebarScale or 1.0, targetScale)
+                    s.Scale = desired
+                end
 
                 -- On small screens, force collapsed width and clamp height so bottom buttons are visible
                 if isSmallViewport() then
-                    local baseCollapsed = 60
-                    local width = math.floor(baseCollapsed * desired)
+                    local baseCollapsed = isMobile and 150 or 60 -- Mobile uses increased width for proper accommodation
+                    local scaleToUse = isMobile and 0.5 or (s.Scale or 1.0)
+                    local width = math.floor(baseCollapsed * scaleToUse)
                     local height = math.min(490, vh - 20)
                     if disableAnimations then
                         sidebar.Size = UDim2.new(0, width, 0, height)
@@ -12435,8 +12444,10 @@ function Components.ModernSidebar(props)
     local baseCollapsed = 60
     local baseExpanded = 200
     -- On mobile we double logical width so after 0.5 UIScale it visually matches PC
+    -- But we need to ensure proper width accommodation for mobile content
+    -- Increased collapsed width to accommodate 50px nav icons properly
     local sidebarWidth = {
-        collapsed = isMobile and (baseCollapsed * 2) or baseCollapsed,
+        collapsed = isMobile and (baseCollapsed * 2.5) or baseCollapsed, -- 150px logical, 75px visual
         expanded = isMobile and (baseExpanded * 2) or baseExpanded,
     }
 
@@ -16476,6 +16487,8 @@ function Components.buildSettingsPage(parent)
                 sidebarScaleObj.Scale = 0.5
             end
             sidebarScale = 0.5
+            -- Also update the slider display to show 50% on mobile
+            sidebarScaleSlider.Set(0) -- This corresponds to 50% scale
             return
         end
 
