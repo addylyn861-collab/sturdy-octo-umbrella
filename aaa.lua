@@ -12962,7 +12962,9 @@ function Components.ModernSidebar(props)
         local actualSidebarWidth = targetWidth * (sidebar:FindFirstChild('UIScale') and sidebar:FindFirstChild('UIScale').Scale or 1)
 
         -- Compact sidebar dimensions
-        local targetSize = UDim2.new(0, targetWidth, 0, isSmallViewport() and math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490) or 490)
+        local isMobile = UserInputService and UserInputService.TouchEnabled
+        local targetHeight = isSmallViewport() and math.min(isMobile and 720 or 490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or (isMobile and 720 or 490)) or 490
+        local targetSize = UDim2.new(0, targetWidth, 0, targetHeight)
         local currentLocation = sidebar:GetAttribute('SidebarLocation')
             or sidebarLocation
         local targetPosition = currentLocation == 'Right'
@@ -13821,7 +13823,8 @@ function Components.ModernSidebar(props)
                     and UDim2.new(1, -70, 0, 10)
                 or UDim2.new(0, 10, 0, 10)
             sidebar.Position = targetPos
-            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, 490)
+            local isMobile = UserInputService and UserInputService.TouchEnabled
+            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 720 or 490)
             brandText.Visible = false
             unloadLabel.Visible = false
             navContainer.Visible = true
@@ -13850,7 +13853,8 @@ function Components.ModernSidebar(props)
                     sidebar.Position = UDim2.new(0, -scaledWidth - 20, 0, 10) -- Off-screen to the left
                 end
 
-                sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, 490)
+                local isMobile = UserInputService and UserInputService.TouchEnabled
+            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 720 or 490)
                 isExpanded = false
                 -- Ensure all elements are visible when off-screen
                 navContainer.Visible = true
