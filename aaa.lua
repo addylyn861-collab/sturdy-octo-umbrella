@@ -844,7 +844,7 @@ local function getMobileSidebarScale()
     if vw >= 900 then
         return 1.0
     end
-    return math.clamp(vw / 900, 0.6, 1.0)
+    return math.clamp(vw / 900, 0.5, 1.0)
 end
 
 -- Responsive layout for mobile/small screens: scale sidebar and clamp window sizes
@@ -867,6 +867,24 @@ function applyResponsiveLayout()
                 end
                 local desired = math.min(sidebarScale or 1.0, targetScale)
                 s.Scale = desired
+
+                -- On small screens, force collapsed width and clamp height so bottom buttons are visible
+                if isSmallViewport() then
+                    local baseCollapsed = 60
+                    local width = math.floor(baseCollapsed * desired)
+                    local height = math.min(490, vh - 20)
+                    if disableAnimations then
+                        sidebar.Size = UDim2.new(0, width, 0, height)
+                    else
+                        TweenService
+                            :Create(
+                                sidebar,
+                                TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                                { Size = UDim2.new(0, width, 0, height) }
+                            )
+                            :Play()
+                    end
+                end
             end
         end
     end)
@@ -12870,8 +12888,9 @@ function Components.ModernSidebar(props)
     -- Toggle sidebar function (for hover expansion)
     function toggleSidebar()
         isExpanded = not isExpanded
-        local targetWidth = isExpanded and sidebarWidth.expanded
-            or sidebarWidth.collapsed
+        local forcedCollapsed = isSmallViewport()
+        local targetWidth = forcedCollapsed and sidebarWidth.collapsed
+            or (isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed)
 
         -- Get current sidebar scale
         local sidebarScale = 1.0
@@ -12884,7 +12903,7 @@ function Components.ModernSidebar(props)
         local actualSidebarWidth = targetWidth * sidebarScale
 
         -- Compact sidebar dimensions
-        local targetSize = UDim2.new(0, targetWidth, 0, 490)
+        local targetSize = UDim2.new(0, targetWidth, 0, isSmallViewport() and math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490) or 490)
         local currentLocation = sidebar:GetAttribute('SidebarLocation')
             or sidebarLocation
         local targetPosition = currentLocation == 'Right'
@@ -12892,7 +12911,7 @@ function Components.ModernSidebar(props)
             or UDim2.new(0, 10, 0, 10)
 
         -- Animate sidebar width with smooth effect (or set immediately if animations disabled)
-        if disableAnimations then
+        if disableAnimations or isSmallViewport() then
             sidebar.Size = targetSize
             sidebar.Position = targetPosition
         else
@@ -12987,10 +13006,10 @@ function Components.ModernSidebar(props)
         end
 
         -- Handle text visibility
-        if isExpanded then
+        if isExpanded and not isSmallViewport() then
             -- Show text with delay for smooth effect
             task.delay(0.2, function()
-                if isExpanded then -- Double check we're still expanded
+                if isExpanded and not isSmallViewport() then -- Double check still expanded and not mobile
                     brandText.Visible = true
                     unloadLabel.Visible = true
                     discordLabel.Visible = true
@@ -13030,7 +13049,7 @@ function Components.ModernSidebar(props)
         -- Update sidebar background color
         TweenService
             :Create(sidebar, TweenInfo.new(0.3), {
-                BackgroundColor3 = isExpanded and SidebarExpanded or Sidebar,
+                BackgroundColor3 = (isExpanded and not isSmallViewport()) and SidebarExpanded or Sidebar,
             })
             :Play()
     end
