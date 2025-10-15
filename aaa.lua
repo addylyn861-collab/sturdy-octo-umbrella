@@ -12436,14 +12436,17 @@ function Components.ModernSidebar(props)
         expanded = 200, -- Icons + labels
     }
 
-    local isExpanded = false -- Start collapsed, expand on hover
+    local isMobile = UserInputService and UserInputService.TouchEnabled
+    local isExpanded = isMobile and true or false -- Mobile: start expanded
     local currentTab = nil -- No tab highlighted initially
     local openWindows = props.openWindows or {} -- Access to open windows table
 
     -- Main sidebar container - Compact design
+    local initialWidth = isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed
+    local initialHeight = (Workspace.CurrentCamera and math.min(490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 490
     local sidebar = New('Frame', {
-        Size = UDim2.new(0, sidebarWidth.collapsed, 0, 490), -- Increased height to fit all elements including unload button
-        Position = sidebarLocation == 'Right' and UDim2.new(1, -70, 0, 10)
+        Size = UDim2.new(0, initialWidth, 0, initialHeight), -- Height fits viewport on small screens
+        Position = (sidebarLocation == 'Right') and UDim2.new(1, -initialWidth - 10, 0, 10)
             or UDim2.new(0, 10, 0, 10), -- Positioned based on sidebar location
         BackgroundColor3 = Sidebar,
         BorderSizePixel = 0,
@@ -12463,7 +12466,7 @@ function Components.ModernSidebar(props)
     -- On mobile, use 100% sidebar scale
     do
         local scaleObj = sidebar:FindFirstChild('UIScale')
-        if UserInputService and UserInputService.TouchEnabled and scaleObj then
+        if isMobile and scaleObj then
             sidebarScale = 1.0
             scaleObj.Scale = 1.0
         end
@@ -12515,7 +12518,7 @@ function Components.ModernSidebar(props)
         TextColor3 = Text,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
-        Visible = false,
+        Visible = isExpanded,
         Parent = header,
     })
 
@@ -12762,7 +12765,7 @@ function Components.ModernSidebar(props)
             TextColor3 = (item.id == currentTab) and Text or Muted,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
-            Visible = false,
+            Visible = isExpanded,
             Parent = navItem,
         })
 
