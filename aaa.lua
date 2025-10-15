@@ -627,32 +627,25 @@ end
 
 -- Create a failsafe unload button immediately (global to avoid local limit)
 function createFailsafeUnload()
-    local sg = New(
-        'ScreenGui',
-        {
-            Name = existingGuiName .. '_failsafe',
-            ResetOnSpawn = false,
-            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-            DisplayOrder = 999999,
-            Parent = CoreGui,
-        }
-    )
-    local btn = New(
-        'TextButton',
-        {
-            Parent = sg,
-            Size = UDim2.new(0, 120, 0, 30),
-            Position = UDim2.new(0, 10, 0, 10),
-            BackgroundColor3 = Color3.fromRGB(200, 50, 50),
-            TextColor3 = Color3.fromRGB(255, 255, 255),
-            Font = Enum.Font.GothamBold,
-            Text = 'Unload Script',
-            ZIndex = 2,
-        },
-        {
-            New('UICorner', { CornerRadius = UDim.new(0, 12) }),
-        }
-    )
+    local sg = New('ScreenGui', {
+        Name = existingGuiName .. '_failsafe',
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = 999999,
+        Parent = CoreGui,
+    })
+    local btn = New('TextButton', {
+        Parent = sg,
+        Size = UDim2.new(0, 120, 0, 30),
+        Position = UDim2.new(0, 10, 0, 10),
+        BackgroundColor3 = Color3.fromRGB(200, 50, 50),
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        Font = Enum.Font.GothamBold,
+        Text = 'Unload Script',
+        ZIndex = 2,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 12) }),
+    })
     btn.MouseButton1Click:Connect(unload)
     return sg
 end
@@ -879,7 +872,11 @@ function applyResponsiveLayout()
                         TweenService
                             :Create(
                                 sidebar,
-                                TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                                TweenInfo.new(
+                                    0.15,
+                                    Enum.EasingStyle.Quad,
+                                    Enum.EasingDirection.Out
+                                ),
                                 { Size = UDim2.new(0, width, 0, height) }
                             )
                             :Play()
@@ -899,14 +896,21 @@ function applyResponsiveLayout()
             if window and window.Parent then
                 -- Determine target size (preserve aspect if possible)
                 local current = window.Size
-                local wpx = (current.X.Scale == 0) and current.X.Offset or math.floor(maxW * (current.X.Scale > 0 and 1 or 0))
-                local hpx = (current.Y.Scale == 0) and current.Y.Offset or math.floor(maxH * (current.Y.Scale > 0 and 1 or 0))
+                local wpx = (current.X.Scale == 0) and current.X.Offset
+                    or math.floor(maxW * (current.X.Scale > 0 and 1 or 0))
+                local hpx = (current.Y.Scale == 0) and current.Y.Offset
+                    or math.floor(maxH * (current.Y.Scale > 0 and 1 or 0))
 
                 -- If scale-based, convert to clamped pixel size for safety
                 local targetWidth = math.min((wpx > 0 and wpx or 600), maxW)
                 local targetHeight = math.min((hpx > 0 and hpx or 400), maxH)
                 -- Center within viewport to avoid creeping
-                local targetPos = UDim2.new(0.5, -math.floor(targetWidth / 2), 0.5, -math.floor(targetHeight / 2))
+                local targetPos = UDim2.new(
+                    0.5,
+                    -math.floor(targetWidth / 2),
+                    0.5,
+                    -math.floor(targetHeight / 2)
+                )
 
                 if disableAnimations then
                     window.Size = UDim2.new(0, targetWidth, 0, targetHeight)
@@ -915,8 +919,20 @@ function applyResponsiveLayout()
                     TweenService
                         :Create(
                             window,
-                            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                            { Size = UDim2.new(0, targetWidth, 0, targetHeight), Position = targetPos }
+                            TweenInfo.new(
+                                0.2,
+                                Enum.EasingStyle.Quad,
+                                Enum.EasingDirection.Out
+                            ),
+                            {
+                                Size = UDim2.new(
+                                    0,
+                                    targetWidth,
+                                    0,
+                                    targetHeight
+                                ),
+                                Position = targetPos,
+                            }
                         )
                         :Play()
                 end
@@ -1441,7 +1457,8 @@ function applyTheme(newTheme)
     -- Update slider colors after theme is applied
     if uiRefs then
         if
-            uiRefs.sidebarScaleSlider and uiRefs.sidebarScaleSlider.updateColors
+            uiRefs.sidebarScaleSlider
+            and uiRefs.sidebarScaleSlider.updateColors
         then
             uiRefs.sidebarScaleSlider.updateColors()
         end
@@ -1996,14 +2013,11 @@ function buildSeedTimerInfoGui()
         Draggable = true,
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 12) }),
-        New(
-            'UIStroke',
-            {
-                Color = Color3.fromRGB(100, 100, 255),
-                Thickness = 2,
-                Transparency = 0.3,
-            }
-        ),
+        New('UIStroke', {
+            Color = Color3.fromRGB(100, 100, 255),
+            Thickness = 2,
+            Transparency = 0.3,
+        }),
     })
 
     local titleLabel = New('TextLabel', {
@@ -2227,14 +2241,11 @@ function updateSeedTimerInfo()
                 TextYAlignment = Enum.TextYAlignment.Top,
                 LayoutOrder = i,
             }, {
-                New(
-                    'UIStroke',
-                    {
-                        Color = Color3.new(0, 0, 0),
-                        Thickness = 1,
-                        Transparency = 0.5,
-                    }
-                ),
+                New('UIStroke', {
+                    Color = Color3.new(0, 0, 0),
+                    Thickness = 1,
+                    Transparency = 0.5,
+                }),
             })
             plantLabels[plant.uuid] = label
         else
@@ -2482,14 +2493,11 @@ function buildUnloadConfirmGui()
         Active = true,
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 8) }),
-        New(
-            'UIStroke',
-            {
-                Color = Color3.fromRGB(100, 100, 100),
-                Thickness = 1,
-                Transparency = 0.5,
-            }
-        ),
+        New('UIStroke', {
+            Color = Color3.fromRGB(100, 100, 100),
+            Thickness = 1,
+            Transparency = 0.5,
+        }),
     })
 
     -- Confirm button
@@ -2506,14 +2514,11 @@ function buildUnloadConfirmGui()
         Active = true,
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 8) }),
-        New(
-            'UIStroke',
-            {
-                Color = Color3.fromRGB(255, 100, 100),
-                Thickness = 1,
-                Transparency = 0.3,
-            }
-        ),
+        New('UIStroke', {
+            Color = Color3.fromRGB(255, 100, 100),
+            Thickness = 1,
+            Transparency = 0.3,
+        }),
     })
 
     -- Store references
@@ -3703,37 +3708,31 @@ function Components.Slider(props)
         ZIndex = props.ZIndex or 4,
     })
     if props.Title then
-        New(
-            'TextLabel',
-            {
-                Size = UDim2.new(1, 0, 0, 14),
-                Position = UDim2.new(0, 0, 0, -2),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamSemibold,
-                TextSize = 12,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextColor3 = Muted,
-                Text = props.Title,
-                Parent = frame,
-            }
-        )
+        New('TextLabel', {
+            Size = UDim2.new(1, 0, 0, 14),
+            Position = UDim2.new(0, 0, 0, -2),
+            BackgroundTransparency = 1,
+            Font = Enum.Font.GothamSemibold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextColor3 = Muted,
+            Text = props.Title,
+            Parent = frame,
+        })
     end
     local valueText
     if props.ValueText then
-        valueText = New(
-            'TextLabel',
-            {
-                Size = UDim2.new(1, -4, 0, 14),
-                Position = UDim2.new(0, 2, 1, -20),
-                BackgroundTransparency = 1,
-                TextColor3 = Muted,
-                Font = Enum.Font.Gotham,
-                TextSize = 12,
-                TextXAlignment = Enum.TextXAlignment.Right,
-                Parent = frame,
-                ZIndex = 3,
-            }
-        )
+        valueText = New('TextLabel', {
+            Size = UDim2.new(1, -4, 0, 14),
+            Position = UDim2.new(0, 2, 1, -20),
+            BackgroundTransparency = 1,
+            TextColor3 = Muted,
+            Font = Enum.Font.Gotham,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Parent = frame,
+            ZIndex = 3,
+        })
     end
 
     local bar = New('Frame', {
@@ -3884,51 +3883,42 @@ function Components.CycleButton(props)
         New('UIStroke', { Color = Stroke, Thickness = 1, Transparency = 0.3 }),
     })
 
-    New(
-        'TextLabel',
-        {
-            Parent = container,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, -10, 0, 14),
-            Position = UDim2.new(0, 8, 0, 3),
-            Font = Enum.Font.GothamSemibold,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextColor3 = Muted,
-            Text = props.Title,
-            ZIndex = 4,
-        }
-    )
-    local btn = New(
-        'TextButton',
-        {
-            Parent = container,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, -28, 0, 16),
-            Position = UDim2.new(0, 6, 0, 14),
-            Font = Enum.Font.Gotham,
-            TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextColor3 = Text,
-            AutoButtonColor = false,
-            ZIndex = 4,
-        }
-    )
-    New(
-        'TextLabel',
-        {
-            Parent = container,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(0, 16, 0, 16),
-            Position = UDim2.new(1, -20, 0, 14),
-            Font = Enum.Font.GothamBold,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            TextColor3 = Muted,
-            Text = '▼',
-            ZIndex = 4,
-        }
-    )
+    New('TextLabel', {
+        Parent = container,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -10, 0, 14),
+        Position = UDim2.new(0, 8, 0, 3),
+        Font = Enum.Font.GothamSemibold,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextColor3 = Muted,
+        Text = props.Title,
+        ZIndex = 4,
+    })
+    local btn = New('TextButton', {
+        Parent = container,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -28, 0, 16),
+        Position = UDim2.new(0, 6, 0, 14),
+        Font = Enum.Font.Gotham,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextColor3 = Text,
+        AutoButtonColor = false,
+        ZIndex = 4,
+    })
+    New('TextLabel', {
+        Parent = container,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0, 16, 0, 16),
+        Position = UDim2.new(1, -20, 0, 14),
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextColor3 = Muted,
+        Text = '▼',
+        ZIndex = 4,
+    })
 
     local options = props.Options or {}
     local currentIndex = 1
@@ -4111,25 +4101,19 @@ function Components.MultiSelectDropdown(props)
         New('UIStroke', { Color = Stroke, Thickness = 1, Transparency = 0.3 }),
     })
 
-    local list = New(
-        'UIListLayout',
-        {
-            Parent = optionsFrame,
-            FillDirection = Enum.FillDirection.Vertical,
-            Padding = UDim.new(0, 4),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-        }
-    )
-    local padding = New(
-        'UIPadding',
-        {
-            Parent = optionsFrame,
-            PaddingLeft = UDim.new(0, 6),
-            PaddingTop = UDim.new(0, 6),
-            PaddingRight = UDim.new(0, 6),
-            PaddingBottom = UDim.new(0, 6),
-        }
-    )
+    local list = New('UIListLayout', {
+        Parent = optionsFrame,
+        FillDirection = Enum.FillDirection.Vertical,
+        Padding = UDim.new(0, 4),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+    local padding = New('UIPadding', {
+        Parent = optionsFrame,
+        PaddingLeft = UDim.new(0, 6),
+        PaddingTop = UDim.new(0, 6),
+        PaddingRight = UDim.new(0, 6),
+        PaddingBottom = UDim.new(0, 6),
+    })
 
     local open = false
     local clickCatcher = nil
@@ -4645,25 +4629,19 @@ function Components.SingleSelectDropdown(props)
         New('UIStroke', { Color = Stroke, Thickness = 1, Transparency = 0.3 }),
     })
 
-    local list = New(
-        'UIListLayout',
-        {
-            Parent = optionsFrame,
-            FillDirection = Enum.FillDirection.Vertical,
-            Padding = UDim.new(0, 4),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-        }
-    )
-    local padding = New(
-        'UIPadding',
-        {
-            Parent = optionsFrame,
-            PaddingLeft = UDim.new(0, 6),
-            PaddingTop = UDim.new(0, 6),
-            PaddingRight = UDim.new(0, 6),
-            PaddingBottom = UDim.new(0, 6),
-        }
-    )
+    local list = New('UIListLayout', {
+        Parent = optionsFrame,
+        FillDirection = Enum.FillDirection.Vertical,
+        Padding = UDim.new(0, 4),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    })
+    local padding = New('UIPadding', {
+        Parent = optionsFrame,
+        PaddingLeft = UDim.new(0, 6),
+        PaddingTop = UDim.new(0, 6),
+        PaddingRight = UDim.new(0, 6),
+        PaddingBottom = UDim.new(0, 6),
+    })
 
     local items = {}
     local selectedName = nil
@@ -5391,16 +5369,13 @@ function applyConfigTable(cfg, uiRefs)
         -- Actually toggle ESP
         if espEnabled then
             if not espGui then
-                espGui = New(
-                    'ScreenGui',
-                    {
-                        Name = 'ESP_Container',
-                        ResetOnSpawn = false,
-                        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-                        DisplayOrder = 1,
-                        Parent = CoreGui,
-                    }
-                )
+                espGui = New('ScreenGui', {
+                    Name = 'ESP_Container',
+                    ResetOnSpawn = false,
+                    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+                    DisplayOrder = 1,
+                    Parent = CoreGui,
+                })
             end
             espGui.Enabled = true
             espRenderConnection =
@@ -5605,16 +5580,13 @@ function applyConfigTable(cfg, uiRefs)
         end
         if seedTimerEspEnabled then
             if not seedTimerEspGui then
-                seedTimerEspGui = New(
-                    'ScreenGui',
-                    {
-                        Name = 'SeedTimerESP_Container',
-                        ResetOnSpawn = false,
-                        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-                        DisplayOrder = 2,
-                        Parent = CoreGui,
-                    }
-                )
+                seedTimerEspGui = New('ScreenGui', {
+                    Name = 'SeedTimerESP_Container',
+                    ResetOnSpawn = false,
+                    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+                    DisplayOrder = 2,
+                    Parent = CoreGui,
+                })
             end
             seedTimerEspGui.Enabled = true
             seedTimerRenderConnection =
@@ -6954,66 +6926,51 @@ function updateEsp()
 end
 
 function createEspLabel(parent)
-    local billboard = New(
-        'BillboardGui',
-        {
-            Adornee = parent,
-            AlwaysOnTop = true,
-            Size = UDim2.new(0, 220, 0, 70),
-            StudsOffset = Vector3.new(0, 2, 0),
-            Enabled = false,
-            Parent = espGui,
-            Name = 'BrainrotESP',
-        }
-    )
-    local nameLabel = New(
-        'TextLabel',
-        {
-            Size = UDim2.new(1, 0, 0.33, 0),
-            Position = UDim2.new(0, 0, 0, 0),
-            BackgroundTransparency = 1,
-            Font = Enum.Font.GothamBold,
-            TextSize = 18,
-            Text = 'Name',
-            TextColor3 = Text,
-            Parent = billboard,
-            ZIndex = 2,
-            Name = 'NameLabel',
-        },
-        { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) }
-    )
-    local healthLabel = New(
-        'TextLabel',
-        {
-            Size = UDim2.new(1, 0, 0.33, 0),
-            Position = UDim2.new(0, 0, 0.33, 0),
-            BackgroundTransparency = 1,
-            Font = Enum.Font.Gotham,
-            TextSize = 16,
-            Text = 'Health',
-            TextColor3 = Text,
-            Parent = billboard,
-            ZIndex = 2,
-            Name = 'HealthLabel',
-        },
-        { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) }
-    )
-    local mutationLabel = New(
-        'TextLabel',
-        {
-            Size = UDim2.new(1, 0, 0.33, 0),
-            Position = UDim2.new(0, 0, 0.66, 0),
-            BackgroundTransparency = 1,
-            Font = Enum.Font.Gotham,
-            TextSize = 16,
-            Text = 'Mutation: None',
-            TextColor3 = Text,
-            Parent = billboard,
-            ZIndex = 2,
-            Name = 'MutationLabel',
-        },
-        { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) }
-    )
+    local billboard = New('BillboardGui', {
+        Adornee = parent,
+        AlwaysOnTop = true,
+        Size = UDim2.new(0, 220, 0, 70),
+        StudsOffset = Vector3.new(0, 2, 0),
+        Enabled = false,
+        Parent = espGui,
+        Name = 'BrainrotESP',
+    })
+    local nameLabel = New('TextLabel', {
+        Size = UDim2.new(1, 0, 0.33, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        TextSize = 18,
+        Text = 'Name',
+        TextColor3 = Text,
+        Parent = billboard,
+        ZIndex = 2,
+        Name = 'NameLabel',
+    }, { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) })
+    local healthLabel = New('TextLabel', {
+        Size = UDim2.new(1, 0, 0.33, 0),
+        Position = UDim2.new(0, 0, 0.33, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham,
+        TextSize = 16,
+        Text = 'Health',
+        TextColor3 = Text,
+        Parent = billboard,
+        ZIndex = 2,
+        Name = 'HealthLabel',
+    }, { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) })
+    local mutationLabel = New('TextLabel', {
+        Size = UDim2.new(1, 0, 0.33, 0),
+        Position = UDim2.new(0, 0, 0.66, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham,
+        TextSize = 16,
+        Text = 'Mutation: None',
+        TextColor3 = Text,
+        Parent = billboard,
+        ZIndex = 2,
+        Name = 'MutationLabel',
+    }, { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) })
     return {
         billboard = billboard,
         name = nameLabel,
@@ -7070,14 +7027,11 @@ function createSeedTimerEspLabel(hitbox)
         BorderSizePixel = 0,
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 8) }),
-        New(
-            'UIStroke',
-            {
-                Color = Color3.fromRGB(100, 100, 255),
-                Thickness = 2,
-                Transparency = 0.3,
-            }
-        ),
+        New('UIStroke', {
+            Color = Color3.fromRGB(100, 100, 255),
+            Thickness = 2,
+            Transparency = 0.3,
+        }),
     })
 
     local titleLabel = New('TextLabel', {
@@ -7388,23 +7342,17 @@ function buildToast(titleText, subText, color, parentContainer)
             'UIStroke',
             { Color = Color3.fromRGB(64, 66, 74), Transparency = 0.35 }
         ),
-        New(
-            'UIPadding',
-            {
-                PaddingTop = UDim.new(0, 6),
-                PaddingBottom = UDim.new(0, 12),
-                PaddingLeft = UDim.new(0, 10),
-                PaddingRight = UDim.new(0, 10),
-            }
-        ),
-        New(
-            'UIListLayout',
-            {
-                FillDirection = Enum.FillDirection.Vertical,
-                Padding = UDim.new(0, 4),
-                SortOrder = Enum.SortOrder.LayoutOrder,
-            }
-        ),
+        New('UIPadding', {
+            PaddingTop = UDim.new(0, 6),
+            PaddingBottom = UDim.new(0, 12),
+            PaddingLeft = UDim.new(0, 10),
+            PaddingRight = UDim.new(0, 10),
+        }),
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical,
+            Padding = UDim.new(0, 4),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }),
     })
 
     local titleLabel = New('TextLabel', {
@@ -7441,14 +7389,10 @@ function buildToast(titleText, subText, color, parentContainer)
         end
         local ti =
             TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-        local shrink = TweenService:Create(
-            card,
-            ti,
-            {
-                BackgroundTransparency = 1,
-                Size = UDim2.new(0, card.AbsoluteSize.X, 0, 0),
-            }
-        )
+        local shrink = TweenService:Create(card, ti, {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, card.AbsoluteSize.X, 0, 0),
+        })
         shrink.Completed:Connect(function()
             if card then
                 card:Destroy()
@@ -8109,62 +8053,47 @@ function parseMutationFromStats(stats)
 end
 
 function createEspLabel(parent)
-    local billboard = New(
-        'BillboardGui',
-        {
-            Adornee = parent,
-            AlwaysOnTop = true,
-            Size = UDim2.new(0, 220, 0, 70),
-            StudsOffset = Vector3.new(0, 2, 0),
-            Enabled = false,
-            Parent = espGui,
-        }
-    )
-    local nameLabel = New(
-        'TextLabel',
-        {
-            Size = UDim2.new(1, 0, 0.33, 0),
-            Position = UDim2.new(0, 0, 0, 0),
-            BackgroundTransparency = 1,
-            Font = Enum.Font.GothamBold,
-            TextSize = 18,
-            Text = 'Name',
-            TextColor3 = Text,
-            Parent = billboard,
-            ZIndex = 2,
-        },
-        { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) }
-    )
-    local healthLabel = New(
-        'TextLabel',
-        {
-            Size = UDim2.new(1, 0, 0.33, 0),
-            Position = UDim2.new(0, 0, 0.33, 0),
-            BackgroundTransparency = 1,
-            Font = Enum.Font.Gotham,
-            TextSize = 16,
-            Text = 'Health',
-            TextColor3 = Text,
-            Parent = billboard,
-            ZIndex = 2,
-        },
-        { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) }
-    )
-    local mutationLabel = New(
-        'TextLabel',
-        {
-            Size = UDim2.new(1, 0, 0.33, 0),
-            Position = UDim2.new(0, 0, 0.66, 0),
-            BackgroundTransparency = 1,
-            Font = Enum.Font.Gotham,
-            TextSize = 16,
-            Text = 'Mutation: None',
-            TextColor3 = Text,
-            Parent = billboard,
-            ZIndex = 2,
-        },
-        { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) }
-    )
+    local billboard = New('BillboardGui', {
+        Adornee = parent,
+        AlwaysOnTop = true,
+        Size = UDim2.new(0, 220, 0, 70),
+        StudsOffset = Vector3.new(0, 2, 0),
+        Enabled = false,
+        Parent = espGui,
+    })
+    local nameLabel = New('TextLabel', {
+        Size = UDim2.new(1, 0, 0.33, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        TextSize = 18,
+        Text = 'Name',
+        TextColor3 = Text,
+        Parent = billboard,
+        ZIndex = 2,
+    }, { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) })
+    local healthLabel = New('TextLabel', {
+        Size = UDim2.new(1, 0, 0.33, 0),
+        Position = UDim2.new(0, 0, 0.33, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham,
+        TextSize = 16,
+        Text = 'Health',
+        TextColor3 = Text,
+        Parent = billboard,
+        ZIndex = 2,
+    }, { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) })
+    local mutationLabel = New('TextLabel', {
+        Size = UDim2.new(1, 0, 0.33, 0),
+        Position = UDim2.new(0, 0, 0.66, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham,
+        TextSize = 16,
+        Text = 'Mutation: None',
+        TextColor3 = Text,
+        Parent = billboard,
+        ZIndex = 2,
+    }, { New('UIStroke', { Color = Color3.new(0, 0, 0), Thickness = 1.5 }) })
     return {
         billboard = billboard,
         name = nameLabel,
@@ -10514,14 +10443,11 @@ function checkSeedStock()
                     if isStocked and not _seedAlertSeen[seedName] then
                         -- Use the authoritative SEED_RARITIES map
                         local rarityName = SEED_RARITIES[seedName] or 'Common'
-                        table.insert(
-                            newStocked,
-                            {
-                                name = seedName,
-                                stock = count,
-                                rarity = rarityName,
-                            }
-                        )
+                        table.insert(newStocked, {
+                            name = seedName,
+                            stock = count,
+                            rarity = rarityName,
+                        })
                     elseif not isStocked then
                         _seedAlertSeen[seedName] = nil
                     end
@@ -11464,17 +11390,14 @@ function buildGameInfoGui()
     })
 
     -- Drag handle for Game Info window (top area)
-    local giDragArea = New(
-        'Frame',
-        {
-            Parent = infoFrame,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 80),
-            Position = UDim2.new(0, 0, 0, 0),
-            ZIndex = 10,
-            Active = true,
-        }
-    )
+    local giDragArea = New('Frame', {
+        Parent = infoFrame,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 80),
+        Position = UDim2.new(0, 0, 0, 0),
+        ZIndex = 10,
+        Active = true,
+    })
 
     local listLayout = New('UIListLayout', {
         FillDirection = Enum.FillDirection.Vertical,
@@ -12437,16 +12360,12 @@ function Components.ModernSidebar(props)
     }
 
     local isExpanded = false -- Start collapsed, expand on hover
-    local isMobile = UserInputService and UserInputService.TouchEnabled
-    if isMobile then
-        isExpanded = true
-    end
     local currentTab = nil -- No tab highlighted initially
     local openWindows = props.openWindows or {} -- Access to open windows table
 
     -- Main sidebar container - Compact design
     local sidebar = New('Frame', {
-        Size = (isMobile and UDim2.new(0, sidebarWidth.expanded, 1, -20)) or UDim2.new(0, sidebarWidth.collapsed, 0, 490), -- Mobile: full height and expanded width
+        Size = UDim2.new(0, sidebarWidth.collapsed, 0, 490), -- Increased height to fit all elements including unload button
         Position = sidebarLocation == 'Right' and UDim2.new(1, -70, 0, 10)
             or UDim2.new(0, 10, 0, 10), -- Positioned based on sidebar location
         BackgroundColor3 = Sidebar,
@@ -12462,6 +12381,15 @@ function Components.ModernSidebar(props)
         }),
         New('UIScale', { Scale = sidebarScale }), -- Add UIScale for scaling functionality
     })
+
+    -- On mobile, force the sidebar scale to minimum without changing layout behavior
+    do
+        local scaleObj = sidebar:FindFirstChild('UIScale')
+        if UserInputService and UserInputService.TouchEnabled and scaleObj then
+            sidebarScale = 0.5
+            scaleObj.Scale = 0.5
+        end
+    end
 
     -- Set the sidebar location attribute for the toggle function to use
     sidebar:SetAttribute('SidebarLocation', sidebarLocation)
@@ -12509,7 +12437,7 @@ function Components.ModernSidebar(props)
         TextColor3 = Text,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
-        Visible = isExpanded,
+        Visible = false,
         Parent = header,
     })
 
@@ -12756,7 +12684,7 @@ function Components.ModernSidebar(props)
             TextColor3 = (item.id == currentTab) and Text or Muted,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
-            Visible = isExpanded,
+            Visible = false,
             Parent = navItem,
         })
 
@@ -12765,9 +12693,6 @@ function Components.ModernSidebar(props)
 
         -- Hover effects
         bind(navItem.MouseEnter:Connect(function()
-            if isMobile then
-                return
-            end
             if item and item.id then
                 pcall(function()
                     -- Always apply size and text effects
@@ -12807,32 +12732,24 @@ function Components.ModernSidebar(props)
                     if isCurrentlyActive then
                         -- Active tab: light blue hover
                         TweenService
-                            :Create(
-                                navItem,
-                                TweenInfo.new(0.2),
-                                {
-                                    BackgroundColor3 = Color3.fromRGB(
-                                        100,
-                                        150,
-                                        255
-                                    ),
-                                }
-                            )
+                            :Create(navItem, TweenInfo.new(0.2), {
+                                BackgroundColor3 = Color3.fromRGB(
+                                    100,
+                                    150,
+                                    255
+                                ),
+                            })
                             :Play()
                     else
                         -- Inactive tab: grey hover
                         TweenService
-                            :Create(
-                                navItem,
-                                TweenInfo.new(0.2),
-                                {
-                                    BackgroundColor3 = Color3.fromRGB(
-                                        100,
-                                        100,
-                                        100
-                                    ),
-                                }
-                            )
+                            :Create(navItem, TweenInfo.new(0.2), {
+                                BackgroundColor3 = Color3.fromRGB(
+                                    100,
+                                    100,
+                                    100
+                                ),
+                            })
                             :Play()
                     end
                 end)
@@ -12840,9 +12757,6 @@ function Components.ModernSidebar(props)
         end))
 
         bind(navItem.MouseLeave:Connect(function()
-            if isMobile then
-                return
-            end
             if item and item.id then
                 pcall(function()
                     -- Always reset size and text effects
@@ -12897,11 +12811,8 @@ function Components.ModernSidebar(props)
     end
     -- Toggle sidebar function (for hover expansion)
     function toggleSidebar()
-        if isMobile then
-            return
-        end
         isExpanded = not isExpanded
-        local forcedCollapsed = (not isMobile) and isSmallViewport()
+        local forcedCollapsed = isSmallViewport()
         local targetWidth = forcedCollapsed and sidebarWidth.collapsed
             or (isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed)
 
@@ -12916,7 +12827,19 @@ function Components.ModernSidebar(props)
         local actualSidebarWidth = targetWidth * sidebarScale
 
         -- Compact sidebar dimensions
-        local targetSize = UDim2.new(0, targetWidth, 0, isSmallViewport() and math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490) or 490)
+        local targetSize = UDim2.new(
+            0,
+            targetWidth,
+            0,
+            isSmallViewport()
+                    and math.min(
+                        490,
+                        Workspace.CurrentCamera
+                                and Workspace.CurrentCamera.ViewportSize.Y - 20
+                            or 490
+                    )
+                or 490
+        )
         local currentLocation = sidebar:GetAttribute('SidebarLocation')
             or sidebarLocation
         local targetPosition = currentLocation == 'Right'
@@ -13062,7 +12985,9 @@ function Components.ModernSidebar(props)
         -- Update sidebar background color
         TweenService
             :Create(sidebar, TweenInfo.new(0.3), {
-                BackgroundColor3 = (isExpanded and not isSmallViewport()) and SidebarExpanded or Sidebar,
+                BackgroundColor3 = (isExpanded and not isSmallViewport())
+                        and SidebarExpanded
+                    or Sidebar,
             })
             :Play()
     end
@@ -14013,61 +13938,45 @@ function Components.buildMainPage(parent)
         ScrollingEnabled = true,
         ZIndex = 2,
     }, {
-        New(
-            'UIPadding',
-            {
-                PaddingLeft = UDim.new(0, 0),
-                PaddingRight = UDim.new(0, 0),
-                PaddingTop = UDim.new(0, 0),
-                PaddingBottom = UDim.new(0, 10),
-            }
-        ),
-        New(
-            'UIListLayout',
-            {
-                FillDirection = Enum.FillDirection.Vertical,
-                Padding = UDim.new(0, 0),
-                SortOrder = Enum.SortOrder.LayoutOrder,
-            }
-        ),
+        New('UIPadding', {
+            PaddingLeft = UDim.new(0, 0),
+            PaddingRight = UDim.new(0, 0),
+            PaddingTop = UDim.new(0, 0),
+            PaddingBottom = UDim.new(0, 10),
+        }),
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical,
+            Padding = UDim.new(0, 0),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }),
     })
 
     Components.SectionLabel('FEATURES', scrollFrame, 10)
-    New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 1),
-            Position = UDim2.new(0, 0, 0, 38),
-            BackgroundColor3 = Stroke,
-            BackgroundTransparency = 0.7,
-            Parent = scrollFrame,
-            ZIndex = 2,
-        },
-        { New('UICorner', { CornerRadius = UDim.new(1, 0) }) }
-    )
+    New('Frame', {
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 0, 38),
+        BackgroundColor3 = Stroke,
+        BackgroundTransparency = 0.7,
+        Parent = scrollFrame,
+        ZIndex = 2,
+    }, { New('UICorner', { CornerRadius = UDim.new(1, 0) }) })
 
     function makeRow(y, height)
-        local row = New(
-            'Frame',
-            {
-                Size = UDim2.new(1, 0, 0, height or 36),
-                Position = UDim2.new(0, 0, 0, y),
-                BackgroundTransparency = 1,
-                Parent = scrollFrame,
-                ZIndex = 2,
-            }
-        )
-        New(
-            'UIListLayout',
-            {
-                FillDirection = Enum.FillDirection.Horizontal,
-                Padding = UDim.new(0, 8),
-                HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                VerticalAlignment = Enum.VerticalAlignment.Center,
-                SortOrder = Enum.SortOrder.LayoutOrder,
-                Parent = row,
-            }
-        )
+        local row = New('Frame', {
+            Size = UDim2.new(1, 0, 0, height or 36),
+            Position = UDim2.new(0, 0, 0, y),
+            BackgroundTransparency = 1,
+            Parent = scrollFrame,
+            ZIndex = 2,
+        })
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = row,
+        })
         return row
     end
 
@@ -14083,21 +13992,18 @@ function Components.buildMainPage(parent)
         gameInfoEnabled = not gameInfoEnabled
         Components.UISync.toggleGameInfo(gameInfoEnabled)
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row1,
-            Size = UDim2.new(0, 160, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Game Info Display',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-            LayoutOrder = 2,
-        }
-    )
+    New('TextLabel', {
+        Parent = row1,
+        Size = UDim2.new(0, 160, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Game Info Display',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+        LayoutOrder = 2,
+    })
 
     -- Auto Collect
     local row2 = makeRow(92)
@@ -14111,22 +14017,19 @@ function Components.buildMainPage(parent)
         autoCollectEnabled = not autoCollectEnabled
         Components.UISync.toggleAutoCollect(autoCollectEnabled)
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row2,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Auto Collect',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row2,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Auto Collect',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     local intervalApi = Components.CycleButton({
         Parent = row2,
@@ -14191,22 +14094,19 @@ function Components.buildMainPage(parent)
         autoEquipBestEnabled and 'on' or 'off',
         autoEquipBestEnabled and Success or DefaultButton
     )
-    New(
-        'TextLabel',
-        {
-            Parent = row2b,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Auto Equip Best',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row2b,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Auto Equip Best',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     local autoEquipBestIntervalApi = Components.CycleButton({
         Parent = row2b,
@@ -14237,65 +14137,62 @@ function Components.buildMainPage(parent)
         Enum.SortOrder.LayoutOrder
     refs.autoEquipBestIntervalApi = autoEquipBestIntervalApi
 
-	-- Auto Sell
-	local row2c = makeRow(152)
-	refs.autoSellBtn = Components.PillButton({
-		Parent = row2c,
-		Size = UDim2.new(0, 28, 0, 28),
-		ZIndex = 3,
-		LayoutOrder = 1,
-	})
-	bind(refs.autoSellBtn.MouseButton1Click:Connect(function()
-		Components.UISync.toggleAutoSell(not autoSellEnabled)
-	end))
-	-- Initialize Auto Sell button state
-	Components.SetState(
-		refs.autoSellBtn,
-		autoSellEnabled and 'on' or 'off',
-		autoSellEnabled and Success or DefaultButton
-	)
-	New(
-		'TextLabel',
-		{
-			Parent = row2c,
-			LayoutOrder = 2,
-			Size = UDim2.new(0, 0, 1, 0),
-			AutomaticSize = Enum.AutomaticSize.X,
-			BackgroundTransparency = 1,
-			Text = 'Auto Sell',
-			TextColor3 = Text,
-			Font = Enum.Font.GothamBold,
-			TextSize = 16,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 3,
-		}
-	)
+    -- Auto Sell
+    local row2c = makeRow(152)
+    refs.autoSellBtn = Components.PillButton({
+        Parent = row2c,
+        Size = UDim2.new(0, 28, 0, 28),
+        ZIndex = 3,
+        LayoutOrder = 1,
+    })
+    bind(refs.autoSellBtn.MouseButton1Click:Connect(function()
+        Components.UISync.toggleAutoSell(not autoSellEnabled)
+    end))
+    -- Initialize Auto Sell button state
+    Components.SetState(
+        refs.autoSellBtn,
+        autoSellEnabled and 'on' or 'off',
+        autoSellEnabled and Success or DefaultButton
+    )
+    New('TextLabel', {
+        Parent = row2c,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Auto Sell',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
-	local autoSellIntervalApi = Components.CycleButton({
-		Parent = row2c,
-		LayoutOrder = 3,
-		Size = UDim2.new(0, 160, 0, 30),
-		Title = 'Interval',
-		Options = {
-			{ label = '30s', value = '30s' },
-			{ label = '45s', value = '45s' },
-			{ label = '60s', value = '60s' },
-			{ label = '90s', value = '90s' },
-			{ label = '120s', value = '120s' },
-			{ label = '180s', value = '180s' },
-		},
-		CurrentValue = tostring(autoSellIntervalSec) .. 's',
-	})
-	autoSellIntervalApi.OnChanged(function(newValue)
-		local secs = tonumber(newValue:match('(%d+)'))
-		if secs and secs > 0 then
-			autoSellIntervalSec = secs
-		end
-	end)
+    local autoSellIntervalApi = Components.CycleButton({
+        Parent = row2c,
+        LayoutOrder = 3,
+        Size = UDim2.new(0, 160, 0, 30),
+        Title = 'Interval',
+        Options = {
+            { label = '30s', value = '30s' },
+            { label = '45s', value = '45s' },
+            { label = '60s', value = '60s' },
+            { label = '90s', value = '90s' },
+            { label = '120s', value = '120s' },
+            { label = '180s', value = '180s' },
+        },
+        CurrentValue = tostring(autoSellIntervalSec) .. 's',
+    })
+    autoSellIntervalApi.OnChanged(function(newValue)
+        local secs = tonumber(newValue:match('(%d+)'))
+        if secs and secs > 0 then
+            autoSellIntervalSec = secs
+        end
+    end)
 
-	row2c:FindFirstChildWhichIsA('UIListLayout').SortOrder =
-		Enum.SortOrder.LayoutOrder
-	refs.autoSellIntervalApi = autoSellIntervalApi
+    row2c:FindFirstChildWhichIsA('UIListLayout').SortOrder =
+        Enum.SortOrder.LayoutOrder
+    refs.autoSellIntervalApi = autoSellIntervalApi
 
     -- Auto Favourite section
     local row2d = makeRow(172)
@@ -14373,22 +14270,19 @@ function Components.buildMainPage(parent)
         holdTriggered = false
     end))
 
-    New(
-        'TextLabel',
-        {
-            Parent = row2d,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Auto Favourite',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row2d,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Auto Favourite',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     -- Auto Favourite rarity dropdown (smaller)
     local autoFavRarityDropdown, _ = Components.MultiSelectDropdown({
@@ -14512,22 +14406,19 @@ function Components.buildMainPage(parent)
         espEnabled and 'on' or 'off',
         espEnabled and Success or DefaultButton
     )
-    New(
-        'TextLabel',
-        {
-            Parent = row3,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Brainrot ESP',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row3,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Brainrot ESP',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     -- Rarity dropdown closer to Brainrot ESP text (bigger) - Use unique PersistenceKey for Brainrot ESP
     local espRarityDropdown, _ = Components.MultiSelectDropdown({
@@ -14615,22 +14506,19 @@ function Components.buildMainPage(parent)
         seedAutoBuyEnabled and 'on' or 'off',
         seedAutoBuyEnabled and Success or DefaultButton
     )
-    New(
-        'TextLabel',
-        {
-            Parent = row5a,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Seed Auto Buy',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row5a,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Seed Auto Buy',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     -- Seed Auto Buy dropdown
     local seedBuyDropdown, _ = Components.MultiSelectDropdown({
@@ -14850,22 +14738,19 @@ function Components.buildMainPage(parent)
         gearAutoBuyEnabled and 'on' or 'off',
         gearAutoBuyEnabled and Success or DefaultButton
     )
-    New(
-        'TextLabel',
-        {
-            Parent = row5b,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Gear Auto Buy',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row5b,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Gear Auto Buy',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     -- Gear Auto Buy dropdown
     local gearBuyDropdown, _ = Components.MultiSelectDropdown({
@@ -15058,22 +14943,19 @@ function Components.buildMainPage(parent)
             autoHitEnabled and Success or DefaultButton
         )
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row5_autohit,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Auto Hit Brainrots',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row5_autohit,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Auto Hit Brainrots',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     -- Movement mode dropdown (inline, smaller)
     local movementModeApi = Components.CycleButton({
@@ -15275,21 +15157,18 @@ function Components.buildMainPage(parent)
         seedTimerEspEnabled = not seedTimerEspEnabled
         Components.UISync.toggleSeedTimerESP(seedTimerEspEnabled)
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row5c,
-            LayoutOrder = 2,
-            Size = UDim2.new(0, 160, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Seed Timer ESP',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row5c,
+        LayoutOrder = 2,
+        Size = UDim2.new(0, 160, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Seed Timer ESP',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     -- Seed Timer Info and Hitbox toggles (positioned like interval dropdown)
     refs.seedTimerInfoBtn = Components.PillButton({
@@ -15302,22 +15181,19 @@ function Components.buildMainPage(parent)
         seedTimerInfoEnabled = not seedTimerInfoEnabled
         Components.UISync.toggleSeedTimerInfo(seedTimerInfoEnabled)
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row5c,
-            LayoutOrder = 4,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Seed Timer Info',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row5c,
+        LayoutOrder = 4,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Seed Timer Info',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     refs.seedTimerHitboxBtn = Components.PillButton({
         Parent = row5c,
@@ -15329,22 +15205,19 @@ function Components.buildMainPage(parent)
         seedTimerHitboxEnabled = not seedTimerHitboxEnabled
         Components.UISync.toggleSeedTimerHitbox(seedTimerHitboxEnabled)
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row5c,
-            LayoutOrder = 6,
-            Size = UDim2.new(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundTransparency = 1,
-            Text = 'Show Hitboxes',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = row5c,
+        LayoutOrder = 6,
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Text = 'Show Hitboxes',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     -- Auto Complete Event section
     local row4 = makeRow(490)
@@ -15365,21 +15238,18 @@ function Components.buildMainPage(parent)
         -- Then do heavy work in background
         toggleAutoCompleteEvent(autoCompleteEventEnabled)
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row4,
-            Size = UDim2.new(0, 160, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Auto Complete Event',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-            LayoutOrder = 2,
-        }
-    )
+    New('TextLabel', {
+        Parent = row4,
+        Size = UDim2.new(0, 160, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Auto Complete Event',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+        LayoutOrder = 2,
+    })
 
     -- Initialize Auto Complete Event button state
     Components.SetState(
@@ -15405,21 +15275,18 @@ function Components.buildMainPage(parent)
             autoRebirthEnabled and Success or DefaultButton
         )
     end))
-    New(
-        'TextLabel',
-        {
-            Parent = row4b,
-            Size = UDim2.new(0, 160, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Auto Rebirth',
-            TextColor3 = Text,
-            Font = Enum.Font.GothamBold,
-            TextSize = 16,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-            LayoutOrder = 2,
-        }
-    )
+    New('TextLabel', {
+        Parent = row4b,
+        Size = UDim2.new(0, 160, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Auto Rebirth',
+        TextColor3 = Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+        LayoutOrder = 2,
+    })
     -- Initialize Auto Rebirth button state
     Components.SetState(
         refs.autoRebirthBtn,
@@ -15458,23 +15325,17 @@ function Components.buildAlertsPage(parent)
             ScrollingDirection = Enum.ScrollingDirection.Y,
             ZIndex = 3,
         }, {
-            New(
-                'UIPadding',
-                {
-                    PaddingLeft = UDim.new(0, 12),
-                    PaddingRight = UDim.new(0, 12),
-                    PaddingTop = UDim.new(0, 6),
-                    PaddingBottom = UDim.new(0, 10),
-                }
-            ),
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Vertical,
-                    Padding = UDim.new(0, 10),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                }
-            ),
+            New('UIPadding', {
+                PaddingLeft = UDim.new(0, 12),
+                PaddingRight = UDim.new(0, 12),
+                PaddingTop = UDim.new(0, 6),
+                PaddingBottom = UDim.new(0, 10),
+            }),
+            New('UIListLayout', {
+                FillDirection = Enum.FillDirection.Vertical,
+                Padding = UDim.new(0, 10),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+            }),
         })
 
         -- Function to update scrolling behavior based on content size
@@ -15528,37 +15389,27 @@ function Components.buildAlertsPage(parent)
 
     -- Scope 2: Brainrot alerts row 1 - toggles and volume
     do
-        local ar1 = New(
-            'Frame',
-            {
-                Size = UDim2.new(1, 0, 0, 36),
-                BackgroundTransparency = 1,
-                Parent = scroll,
-                ZIndex = 2,
-            }
-        )
-        local brLeft = New(
-            'Frame',
-            {
-                Parent = ar1,
-                BackgroundTransparency = 1,
-                Size = UDim2.new(1, -240, 1, 0),
-                Position = UDim2.new(0, 0, 0, 0),
-                ZIndex = 2,
-            },
-            {
-                New(
-                    'UIListLayout',
-                    {
-                        FillDirection = Enum.FillDirection.Horizontal,
-                        Padding = UDim.new(0, 8),
-                        HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                        VerticalAlignment = Enum.VerticalAlignment.Center,
-                        SortOrder = Enum.SortOrder.LayoutOrder,
-                    }
-                ),
-            }
-        )
+        local ar1 = New('Frame', {
+            Size = UDim2.new(1, 0, 0, 36),
+            BackgroundTransparency = 1,
+            Parent = scroll,
+            ZIndex = 2,
+        })
+        local brLeft = New('Frame', {
+            Parent = ar1,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, -240, 1, 0),
+            Position = UDim2.new(0, 0, 0, 0),
+            ZIndex = 2,
+        }, {
+            New('UIListLayout', {
+                FillDirection = Enum.FillDirection.Horizontal,
+                Padding = UDim.new(0, 8),
+                HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                VerticalAlignment = Enum.VerticalAlignment.Center,
+                SortOrder = Enum.SortOrder.LayoutOrder,
+            }),
+        })
 
         refs.alertsToggle = Components.PillButton({
             Parent = brLeft,
@@ -15581,43 +15432,33 @@ function Components.buildAlertsPage(parent)
             pcall(updateToastPositions)
         end))
 
-        local brRight = New(
-            'Frame',
-            {
-                Parent = ar1,
-                BackgroundTransparency = 1,
-                Size = UDim2.new(0, 220, 1, 0),
-                AnchorPoint = Vector2.new(1, 0),
-                Position = UDim2.new(1, 0, 0, 0),
-                ZIndex = 3,
-            },
-            {
-                New(
-                    'UIListLayout',
-                    {
-                        FillDirection = Enum.FillDirection.Horizontal,
-                        Padding = UDim.new(0, 4),
-                        HorizontalAlignment = Enum.HorizontalAlignment.Right,
-                        VerticalAlignment = Enum.VerticalAlignment.Center,
-                    }
-                ),
-            }
-        )
-        New(
-            'TextLabel',
-            {
-                Parent = brRight,
-                Size = UDim2.new(0, 0, 1, 0),
-                AutomaticSize = Enum.AutomaticSize.X,
-                BackgroundTransparency = 1,
-                Text = 'Enable Serverwide',
-                TextColor3 = Muted,
-                Font = Enum.Font.Gotham,
-                TextSize = 14,
-                TextXAlignment = Enum.TextXAlignment.Right,
-                ZIndex = 3,
-            }
-        )
+        local brRight = New('Frame', {
+            Parent = ar1,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 220, 1, 0),
+            AnchorPoint = Vector2.new(1, 0),
+            Position = UDim2.new(1, 0, 0, 0),
+            ZIndex = 3,
+        }, {
+            New('UIListLayout', {
+                FillDirection = Enum.FillDirection.Horizontal,
+                Padding = UDim.new(0, 4),
+                HorizontalAlignment = Enum.HorizontalAlignment.Right,
+                VerticalAlignment = Enum.VerticalAlignment.Center,
+            }),
+        })
+        New('TextLabel', {
+            Parent = brRight,
+            Size = UDim2.new(0, 0, 1, 0),
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Text = 'Enable Serverwide',
+            TextColor3 = Muted,
+            Font = Enum.Font.Gotham,
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            ZIndex = 3,
+        })
         local serverwideToggle = Components.PillButton({
             Parent = brRight,
             Size = UDim2.new(0, 28, 0, 28),
@@ -15652,27 +15493,20 @@ function Components.buildAlertsPage(parent)
     end
 
     -- Brainrot alerts row 2 - dropdowns and filters (removed scope to fix dropdown interference)
-    local ar2 = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 10),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                }
-            ),
-        }
-    )
+    local ar2 = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 10),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }),
+    })
 
     local alertRarityDropdown = Components.MultiSelectDropdown({
         Parent = ar2,
@@ -15795,26 +15629,19 @@ function Components.buildAlertsPage(parent)
 
     Components.SectionLabel('SEED ALERTS', scroll)
 
-    local ar3 = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local ar3 = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
     refs.seedAlertsToggle = Components.PillButton({
         Parent = ar3,
         Size = UDim2.new(0, 28, 0, 28),
@@ -15866,27 +15693,20 @@ function Components.buildAlertsPage(parent)
 
     Components.SectionLabel('GEAR ALERTS', scroll)
 
-    local ar4 = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                }
-            ),
-        }
-    )
+    local ar4 = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }),
+    })
 
     -- Gear alerts toggle
     refs.gearAlertsToggle = Components.PillButton({
@@ -15926,29 +15746,22 @@ function Components.buildAlertsPage(parent)
     -- Gear dropdown will be populated automatically when checkGearStock runs
 
     -- Right-anchored holder for label + webhook toggle (like original script)
-    local rightHolder = New(
-        'Frame',
-        {
-            Parent = ar4,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(0, 220, 1, 0),
-            AnchorPoint = Vector2.new(1, 0),
-            Position = UDim2.new(1, 0, 0, 0),
-            ZIndex = 3,
-            LayoutOrder = 99,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 4),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Right,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local rightHolder = New('Frame', {
+        Parent = ar4,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0, 220, 1, 0),
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, 0, 0, 0),
+        ZIndex = 3,
+        LayoutOrder = 99,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 4),
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
     New('TextLabel', {
         Parent = rightHolder,
         Size = UDim2.new(0, 0, 1, 0),
@@ -16005,23 +15818,17 @@ function Components.buildSettingsPage(parent)
         ScrollingDirection = Enum.ScrollingDirection.Y,
         ZIndex = 3,
     }, {
-        New(
-            'UIPadding',
-            {
-                PaddingLeft = UDim.new(0, 12),
-                PaddingRight = UDim.new(0, 12),
-                PaddingTop = UDim.new(0, 6),
-                PaddingBottom = UDim.new(0, 10),
-            }
-        ),
-        New(
-            'UIListLayout',
-            {
-                FillDirection = Enum.FillDirection.Vertical,
-                Padding = UDim.new(0, 10),
-                SortOrder = Enum.SortOrder.LayoutOrder,
-            }
-        ),
+        New('UIPadding', {
+            PaddingLeft = UDim.new(0, 12),
+            PaddingRight = UDim.new(0, 12),
+            PaddingTop = UDim.new(0, 6),
+            PaddingBottom = UDim.new(0, 10),
+        }),
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical,
+            Padding = UDim.new(0, 10),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+        }),
     })
 
     -- Function to update scrolling behavior based on content size
@@ -16136,25 +15943,18 @@ function Components.buildSettingsPage(parent)
 
     -- Webhook section
     Components.SectionLabel('WEBHOOK', scroll)
-    local webhookRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 64),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Vertical,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                }
-            ),
-        }
-    )
+    local webhookRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 64),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Vertical,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+        }),
+    })
     local webhookBox = New('TextBox', {
         Parent = webhookRow,
         Size = UDim2.new(1, 0, 0, 28),
@@ -16179,26 +15979,19 @@ function Components.buildSettingsPage(parent)
     end))
     refs.webhookBox = webhookBox
 
-    local webhookControlsRow = New(
-        'Frame',
-        {
-            Parent = webhookRow,
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            ZIndex = 4,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local webhookControlsRow = New('Frame', {
+        Parent = webhookRow,
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        ZIndex = 4,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
     local pingApi = Components.CycleButton({
         Parent = webhookControlsRow,
@@ -16218,25 +16011,18 @@ function Components.buildSettingsPage(parent)
     end)
     refs.pingApi = pingApi
 
-    local webhookButtons = New(
-        'Frame',
-        {
-            Parent = webhookControlsRow,
-            Size = UDim2.new(1, -128, 1, 0),
-            BackgroundTransparency = 1,
-            ZIndex = 5,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8, 0, 0),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Right,
-                }
-            ),
-        }
-    )
+    local webhookButtons = New('Frame', {
+        Parent = webhookControlsRow,
+        Size = UDim2.new(1, -128, 1, 0),
+        BackgroundTransparency = 1,
+        ZIndex = 5,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8, 0, 0),
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        }),
+    })
 
     refs.webhookToggleBtn = Components.PillButton({
         Parent = webhookButtons,
@@ -16372,14 +16158,11 @@ function Components.buildSettingsPage(parent)
                     if selectedSeedFilters[seedName] then
                         local stockCount = parseStockCount(stockText)
                         if stockCount > 0 then
-                            table.insert(
-                                newStocked,
-                                {
-                                    name = seedName,
-                                    stock = stockCount,
-                                    rarity = rarity,
-                                }
-                            )
+                            table.insert(newStocked, {
+                                name = seedName,
+                                stock = stockCount,
+                                rarity = rarity,
+                            })
                             table.insert(names, seedName)
                         end
                     end
@@ -16579,40 +16362,30 @@ function Components.buildSettingsPage(parent)
     -- Theme switcher
     Components.SectionLabel('THEME', scroll)
 
-    local themeRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local themeRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
-    New(
-        'TextLabel',
-        {
-            Parent = themeRow,
-            Size = UDim2.new(0, 120, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Theme',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = themeRow,
+        Size = UDim2.new(0, 120, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Theme',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     local themeApi = Components.CycleButton({
         Parent = themeRow,
@@ -16640,41 +16413,31 @@ function Components.buildSettingsPage(parent)
     Components.SectionLabel('SIDEBAR', scroll)
 
     -- Keep sidebar open toggle
-    local sidebarRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local sidebarRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
-    New(
-        'TextLabel',
-        {
-            Parent = sidebarRow,
-            Size = UDim2.new(0, 120, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Keep Sidebar Open',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = sidebarRow,
+        Size = UDim2.new(0, 120, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Keep Sidebar Open',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
     local keepSidebarBtn = Components.PillButton({
         Parent = sidebarRow,
         Size = UDim2.new(0, 60, 0, 28),
@@ -16709,41 +16472,31 @@ function Components.buildSettingsPage(parent)
     refs.keepSidebarBtn = keepSidebarBtn
 
     -- Mobile button toggle
-    local mobileButtonRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local mobileButtonRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
-    New(
-        'TextLabel',
-        {
-            Parent = mobileButtonRow,
-            Size = UDim2.new(0, 120, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Mobile Button',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = mobileButtonRow,
+        Size = UDim2.new(0, 120, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Mobile Button',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
     local mobileButtonToggle = Components.PillButton({
         Parent = mobileButtonRow,
         Size = UDim2.new(0, 60, 0, 28),
@@ -16779,41 +16532,31 @@ function Components.buildSettingsPage(parent)
     refs.mobileButtonToggle = mobileButtonToggle
 
     -- Sidebar location dropdown
-    local sidebarLocationRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local sidebarLocationRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
-    New(
-        'TextLabel',
-        {
-            Parent = sidebarLocationRow,
-            Size = UDim2.new(0, 120, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Sidebar Location',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = sidebarLocationRow,
+        Size = UDim2.new(0, 120, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Sidebar Location',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
 
     local sidebarLocationDropdown = Components.CycleButton({
         Parent = sidebarLocationRow,
@@ -16870,41 +16613,31 @@ function Components.buildSettingsPage(parent)
     Components.SectionLabel('PERFORMANCE', scroll)
 
     -- Disable blur toggle
-    local blurRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local blurRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
-    New(
-        'TextLabel',
-        {
-            Parent = blurRow,
-            Size = UDim2.new(0, 120, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Disable Blur',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = blurRow,
+        Size = UDim2.new(0, 120, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Disable Blur',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
     local disableBlurBtn = Components.PillButton({
         Parent = blurRow,
         Size = UDim2.new(0, 60, 0, 28),
@@ -16931,41 +16664,31 @@ function Components.buildSettingsPage(parent)
     refs.disableBlurBtn = disableBlurBtn
 
     -- Disable animations toggle
-    local animationsRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local animationsRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
-    New(
-        'TextLabel',
-        {
-            Parent = animationsRow,
-            Size = UDim2.new(0, 120, 1, 0),
-            BackgroundTransparency = 1,
-            Text = 'Disable Animations',
-            TextColor3 = Text,
-            Font = Enum.Font.Gotham,
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 3,
-        }
-    )
+    New('TextLabel', {
+        Parent = animationsRow,
+        Size = UDim2.new(0, 120, 1, 0),
+        BackgroundTransparency = 1,
+        Text = 'Disable Animations',
+        TextColor3 = Text,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
     local disableAnimationsBtn = Components.PillButton({
         Parent = animationsRow,
         Size = UDim2.new(0, 60, 0, 28),
@@ -16990,26 +16713,19 @@ function Components.buildSettingsPage(parent)
 
     -- Config section
     Components.SectionLabel('CONFIG', scroll)
-    local configRow = New(
-        'Frame',
-        {
-            Size = UDim2.new(1, 0, 0, 36),
-            BackgroundTransparency = 1,
-            Parent = scroll,
-            ZIndex = 2,
-        },
-        {
-            New(
-                'UIListLayout',
-                {
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    Padding = UDim.new(0, 8),
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    VerticalAlignment = Enum.VerticalAlignment.Center,
-                }
-            ),
-        }
-    )
+    local configRow = New('Frame', {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = scroll,
+        ZIndex = 2,
+    }, {
+        New('UIListLayout', {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+        }),
+    })
 
     local nameBox, configSelectApi
     function refreshConfigs(selectName)
@@ -17949,7 +17665,10 @@ function buildGui()
         }, {
             New(
                 'UIPadding',
-                { PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 20) }
+                {
+                    PaddingTop = UDim.new(0, 10),
+                    PaddingBottom = UDim.new(0, 20),
+                }
             ),
         })
 
@@ -18507,7 +18226,8 @@ function buildGui()
                     then
                         instance.TextColor3 = Text
                     elseif
-                        instance.Name:find('Muted') or instance.Name:find('Sub')
+                        instance.Name:find('Muted')
+                        or instance.Name:find('Sub')
                     then
                         instance.TextColor3 = Muted
                     else
@@ -18873,16 +18593,13 @@ if gearAlertEnabled then
 end
 
 -- Initialize ESP GUI
-espGui = New(
-    'ScreenGui',
-    {
-        Name = 'ESP_Container',
-        ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        DisplayOrder = 1,
-        Parent = CoreGui,
-    }
-)
+espGui = New('ScreenGui', {
+    Name = 'ESP_Container',
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    DisplayOrder = 1,
+    Parent = CoreGui,
+})
 
 -- Initialize brainrot alerts
 setupBrainrotAlerts()
