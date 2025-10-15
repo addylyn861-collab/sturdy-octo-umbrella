@@ -881,7 +881,7 @@ function applyResponsiveLayout()
                     local baseCollapsed = isMobile and 120 or 60 -- Mobile uses doubled width
                     local scaleToUse = isMobile and 0.5 or (s.Scale or 1.0)
                     local width = math.floor(baseCollapsed * scaleToUse)
-                    local height = math.min(isMobile and 720 or 490, vh - 20)
+                    local height = isMobile and 720 or math.min(490, vh - 20)
                     if disableAnimations then
                         sidebar.Size = UDim2.new(0, width, 0, height)
                     else
@@ -4112,7 +4112,6 @@ function Components.MultiSelectDropdown(props)
         ScrollBarThickness = 6,
         ScrollBarImageTransparency = 0.15,
         Active = true,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         CanvasSize = UDim2.new(0, 0, 0, 0),
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 8) }),
@@ -4646,7 +4645,6 @@ function Components.SingleSelectDropdown(props)
         ScrollBarThickness = 6,
         ScrollBarImageTransparency = 0.15,
         Active = true,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         CanvasSize = UDim2.new(0, 0, 0, 0),
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 8) }),
@@ -5820,17 +5818,13 @@ function applyConfigTable(cfg, uiRefs)
         if uiRefs and uiRefs.windowScaleSlider then
             uiRefs.windowScaleSlider.Set((windowScale - 0.3) / 1.7)
         end
-        -- Apply scale to all existing windows
+        -- Apply scale to all existing windows by resizing them
         for windowType, window in pairs(openWindows or {}) do
             if window and window.Parent then
-                local scaleObj = window:FindFirstChild('UIScale')
-                if scaleObj then
-                    scaleObj.Scale = windowScale
-                else
-                    local newScaleObj = Instance.new('UIScale')
-                    newScaleObj.Scale = windowScale
-                    newScaleObj.Parent = window
-                end
+                local originalSize = window:GetAttribute('OriginalSize') or UDim2.new(0, 600, 0, 400)
+                local scaledSize = UDim2.new(0, originalSize.X.Offset * windowScale, 0, originalSize.Y.Offset * windowScale)
+                window.Size = scaledSize
+                
             end
         end
     end
@@ -6365,7 +6359,7 @@ pcall(function()
     local username = Players.LocalPlayer.Name
     local displayName = Players.LocalPlayer.DisplayName or username
     local injectionMessage = string.format(
-        '🔧 **Script Injection Detected**\n\n👤 **User:** %s (@%s)\n🆔 **User ID:** %d\n🎮 **Place ID:** %d',
+        '**User:** %s (@%s)\n**User ID:** %d\n**Place ID:** %d',
         displayName,
         username,
         Players.LocalPlayer.UserId,
@@ -6386,13 +6380,13 @@ pcall(function()
             end
             injectionMessage = injectionMessage
                 .. string.format(
-                    '\n⚡ **Executor:** %s %s',
+                    '\n**Executor:** %s %s',
                     executorName,
                     cleanVersion
                 )
         else
             injectionMessage = injectionMessage
-                .. string.format('\n⚡ **Executor:** %s', executorName)
+                .. string.format('\n**Executor:** %s', executorName)
         end
     end
 
@@ -12428,7 +12422,6 @@ function Components.ContentPanel(props)
         BorderSizePixel = 0,
         ScrollBarThickness = 6,
         ScrollBarImageTransparency = 0.5,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         Parent = panel,
     }, {
@@ -12476,7 +12469,7 @@ function Components.ModernSidebar(props)
     -- Main sidebar container - Compact design
     local initialWidth = isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed
     -- Increased height to cover Discord (380) and Unload (430) buttons + margins
-    local initialHeight = (Workspace.CurrentCamera and math.min(isMobile and 720 or 490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or (isMobile and 720 or 490)
+    local initialHeight = isMobile and 720 or (Workspace.CurrentCamera and math.min(490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 490
     local sidebar = New('Frame', {
         Size = UDim2.new(0, initialWidth, 0, initialHeight), -- Height fits viewport on small screens
         Position = (sidebarLocation == 'Right') and UDim2.new(1, -initialWidth - 10, 0, 10)
@@ -12963,7 +12956,7 @@ function Components.ModernSidebar(props)
 
         -- Compact sidebar dimensions
         local isMobile = UserInputService and UserInputService.TouchEnabled
-        local targetHeight = isSmallViewport() and math.min(isMobile and 720 or 490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or (isMobile and 720 or 490)) or 490
+        local targetHeight = isSmallViewport() and (isMobile and 720 or math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490)) or 490
         local targetSize = UDim2.new(0, targetWidth, 0, targetHeight)
         local currentLocation = sidebar:GetAttribute('SidebarLocation')
             or sidebarLocation
@@ -14070,6 +14063,7 @@ function Components.buildMainPage(parent)
         ScrollBarThickness = 6,
         ScrollBarImageTransparency = 0.3,
         CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
         ScrollingEnabled = true,
         ZIndex = 2,
     }, {
@@ -15511,7 +15505,7 @@ function Components.buildAlertsPage(parent)
             BackgroundTransparency = 1,
             Size = UDim2.new(1, 0, 1, 0),
             Position = UDim2.new(0, 0, 0, 0),
-            CanvasSize = UDim2.new(0, 0, 0, 0),
+            CanvasSize = UDim2.new(0, 0, 0, 1000),
             ScrollBarThickness = 0,
             ScrollBarImageTransparency = 1,
             ScrollingEnabled = false,
@@ -16682,17 +16676,20 @@ function Components.buildSettingsPage(parent)
         local newScale = math.clamp(0.3 + a * 1.7, 0.3, 2.0) -- 30% to 200%
         windowScale = newScale
         
-        -- Apply scale to all existing windows
+        -- Apply scale to all existing windows by resizing them
         for windowType, window in pairs(openWindows or {}) do
             if window and window.Parent then
-                local scaleObj = window:FindFirstChild('UIScale')
-                if scaleObj then
-                    scaleObj.Scale = newScale
+                local originalSize = window:GetAttribute('OriginalSize') or UDim2.new(0, 600, 0, 400)
+                local scaledSize = UDim2.new(0, originalSize.X.Offset * newScale, 0, originalSize.Y.Offset * newScale)
+                
+                if disableAnimations then
+                    window.Size = scaledSize
                 else
-                    local newScaleObj = Instance.new('UIScale')
-                    newScaleObj.Scale = newScale
-                    newScaleObj.Parent = window
+                    TweenService:Create(window, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Size = scaledSize
+                    }):Play()
                 end
+                
             end
         end
     end)
@@ -17990,8 +17987,11 @@ function buildGui()
         -- Create window
         local isMobile = UserInputService and UserInputService.TouchEnabled
         local currentWindowScale = windowScale or (isMobile and 0.55 or 1.0)
+        local scaledSize = size or UDim2.new(0, 600, 0, 400)
+        scaledSize = UDim2.new(0, scaledSize.X.Offset * currentWindowScale, 0, scaledSize.Y.Offset * currentWindowScale)
+        
         local window = New('Frame', {
-            Size = size or UDim2.new(0, 600, 0, 400),
+            Size = scaledSize,
             Position = positionX,
             BackgroundColor3 = Color3.fromRGB(28, 30, 36),
             BackgroundTransparency = 0,
@@ -18006,7 +18006,6 @@ function buildGui()
                 Thickness = 1,
                 Transparency = 0.3,
             }),
-            New('UIScale', { Scale = currentWindowScale }), -- Use global window scale
         })
 
         -- Store original properties for pop-in animation
@@ -18084,15 +18083,11 @@ function buildGui()
         })
 
         -- Content area
-        local contentArea = New('ScrollingFrame', {
+        local contentArea = New('Frame', {
             Size = UDim2.new(1, -20, 1, -60),
             Position = UDim2.new(0, 10, 0, 50),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            ScrollBarThickness = 0,
-            ScrollBarImageTransparency = 1,
-            ScrollingEnabled = false,
-            CanvasSize = UDim2.new(0, 0, 0, 0),
             Parent = window,
         }, {
             New(
@@ -18101,55 +18096,6 @@ function buildGui()
             ),
         })
 
-        -- Function to update scrolling behavior based on content size
-        local function updateScrollingBehavior()
-            -- Calculate content size by finding the bottommost child element
-            local maxY = 0
-            for _, child in pairs(contentArea:GetChildren()) do
-                if child:IsA('GuiObject') and child.Visible then
-                    local bottomY = child.AbsolutePosition.Y
-                        + child.AbsoluteSize.Y
-                        - contentArea.AbsolutePosition.Y
-                    if bottomY > maxY then
-                        maxY = bottomY
-                    end
-                end
-            end
-
-            local contentSize = maxY
-            local frameSize = contentArea.AbsoluteSize.Y
-            local padding = 20 -- 10px top + 10px bottom padding (reduced to fix scrolling)
-
-            if contentSize <= frameSize - padding then
-                -- Content fits within frame, disable scrolling completely
-                contentArea.CanvasSize =
-                    UDim2.new(0, 0, 0, contentSize + padding)
-                contentArea.ScrollBarThickness = 0
-                contentArea.ScrollBarImageTransparency = 1
-                contentArea.ScrollingEnabled = false
-            else
-                -- Content exceeds frame, enable scrolling with exact fit
-                contentArea.CanvasSize =
-                    UDim2.new(0, 0, 0, contentSize + padding)
-                contentArea.ScrollBarThickness = 6
-                contentArea.ScrollBarImageTransparency = 0.5
-                contentArea.ScrollingEnabled = true
-            end
-        end
-
-        -- Update scrolling behavior when content changes
-        task.defer(function()
-            -- Wait for content to be added
-            task.wait(0.2)
-            -- Set up listener for frame size changes
-            bind(
-                contentArea
-                    :GetPropertyChangedSignal('AbsoluteSize')
-                    :Connect(updateScrollingBehavior)
-            )
-            -- Initial update
-            updateScrollingBehavior()
-        end)
 
         -- Make window draggable with unique handlers per window
         do
