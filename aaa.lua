@@ -12449,7 +12449,7 @@ function Components.ModernSidebar(props)
         BorderSizePixel = 0,
         Parent = props.Parent,
         ZIndex = 100,
-        ClipsDescendants = true,
+        ClipsDescendants = false,
     }, {
         New('UICorner', { CornerRadius = UDim.new(0, 16) }), -- Clean rounded corners
         New('UIStroke', {
@@ -12460,18 +12460,12 @@ function Components.ModernSidebar(props)
         New('UIScale', { Scale = sidebarScale }), -- Add UIScale for scaling functionality
     })
 
-    -- On mobile, force the sidebar scale to minimum without changing layout behavior
+    -- On mobile, use 100% sidebar scale
     do
         local scaleObj = sidebar:FindFirstChild('UIScale')
         if UserInputService and UserInputService.TouchEnabled and scaleObj then
-            sidebarScale = 0.5
-            scaleObj.Scale = 0.5
-            -- Lock any future changes (e.g., when opening Settings) to prevent jumps
-            bind(scaleObj:GetPropertyChangedSignal('Scale'):Connect(function()
-                if scaleObj.Scale ~= 0.5 then
-                    scaleObj.Scale = 0.5
-                end
-            end))
+            sidebarScale = 1.0
+            scaleObj.Scale = 1.0
         end
     end
 
@@ -12491,8 +12485,7 @@ function Components.ModernSidebar(props)
     local brandIcon = New('TextButton', {
         Name = 'BrandIcon',
         Size = UDim2.new(0, 40, 0, 40),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0.5, 0, 0, 30),
+        Position = UDim2.new(0, 10, 0, 10),
         BackgroundColor3 = AccentA,
         Text = 'S',
         Font = Enum.Font.GothamBold,
@@ -16578,6 +16571,7 @@ function Components.buildSettingsPage(parent)
         end,
     })
     toastScaleSlider.OnChanged(function(a)
+        -- Adjustable on all platforms; defaults handled during init above
         toastScale = 0.5 + a * 1.5 -- Update global variable
         for _, container in ipairs({
             toastContainer,
@@ -16592,7 +16586,12 @@ function Components.buildSettingsPage(parent)
             end
         end
     end)
-    toastScaleSlider.Set((toastScale - 0.5) / 1.5)
+    -- Initialize slider position per platform defaults
+    if UserInputService and UserInputService.TouchEnabled then
+        toastScaleSlider.Set((0.75 - 0.5) / 1.5)
+    else
+        toastScaleSlider.Set((toastScale - 0.5) / 1.5)
+    end
     refs.toastScaleSlider = toastScaleSlider
 
     -- Apply correct colors immediately after creation
@@ -18883,6 +18882,20 @@ ensureOverlay()
 ensureToastsGui()
 ensureSeedToastsGui()
 ensureGearToastsGui()
+-- Set default toast scale per platform: mobile 75%, PC 125%
+do
+    local isMobile = UserInputService and UserInputService.TouchEnabled
+    local targetScale = isMobile and 0.75 or 1.25
+    toastScale = targetScale
+    for _, container in ipairs({ toastContainer, seedToastContainer, gearToastContainer }) do
+        if container and container.Parent then
+            local s = container:FindFirstChild('UIScale')
+            if s then
+                s.Scale = targetScale
+            end
+        end
+    end
+end
 updateToastPositions()
 
 -- Initialize features that need to be running
