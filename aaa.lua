@@ -12437,12 +12437,16 @@ function Components.ModernSidebar(props)
     }
 
     local isExpanded = false -- Start collapsed, expand on hover
+    local isMobile = UserInputService and UserInputService.TouchEnabled
+    if isMobile then
+        isExpanded = true
+    end
     local currentTab = nil -- No tab highlighted initially
     local openWindows = props.openWindows or {} -- Access to open windows table
 
     -- Main sidebar container - Compact design
     local sidebar = New('Frame', {
-        Size = UDim2.new(0, sidebarWidth.collapsed, 0, 490), -- Increased height to fit all elements including unload button
+        Size = (isMobile and UDim2.new(0, sidebarWidth.expanded, 1, -20)) or UDim2.new(0, sidebarWidth.collapsed, 0, 490), -- Mobile: full height and expanded width
         Position = sidebarLocation == 'Right' and UDim2.new(1, -70, 0, 10)
             or UDim2.new(0, 10, 0, 10), -- Positioned based on sidebar location
         BackgroundColor3 = Sidebar,
@@ -12505,7 +12509,7 @@ function Components.ModernSidebar(props)
         TextColor3 = Text,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
-        Visible = false,
+        Visible = isExpanded,
         Parent = header,
     })
 
@@ -12752,7 +12756,7 @@ function Components.ModernSidebar(props)
             TextColor3 = (item.id == currentTab) and Text or Muted,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
-            Visible = false,
+            Visible = isExpanded,
             Parent = navItem,
         })
 
@@ -12761,6 +12765,9 @@ function Components.ModernSidebar(props)
 
         -- Hover effects
         bind(navItem.MouseEnter:Connect(function()
+            if isMobile then
+                return
+            end
             if item and item.id then
                 pcall(function()
                     -- Always apply size and text effects
@@ -12833,6 +12840,9 @@ function Components.ModernSidebar(props)
         end))
 
         bind(navItem.MouseLeave:Connect(function()
+            if isMobile then
+                return
+            end
             if item and item.id then
                 pcall(function()
                     -- Always reset size and text effects
@@ -12887,8 +12897,11 @@ function Components.ModernSidebar(props)
     end
     -- Toggle sidebar function (for hover expansion)
     function toggleSidebar()
+        if isMobile then
+            return
+        end
         isExpanded = not isExpanded
-        local forcedCollapsed = isSmallViewport()
+        local forcedCollapsed = (not isMobile) and isSmallViewport()
         local targetWidth = forcedCollapsed and sidebarWidth.collapsed
             or (isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed)
 
