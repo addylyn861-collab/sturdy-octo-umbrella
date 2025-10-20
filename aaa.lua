@@ -9,11 +9,56 @@ local currentTime = tick()
 
 -- Use CoreGui to store the last injection time persistently
 local coreGui = game:GetService("CoreGui")
+local TweenService = game:GetService('TweenService')
 local cooldownGui = coreGui:FindFirstChild("ScriptInjectionCooldown")
 
-if cooldownGui then
-    local lastTime = cooldownGui:GetAttribute("LastInjectionTime")
-    if lastTime and (currentTime - lastTime) < 30 then
+-- Whitelist for bypassing injection cooldown (same as webhook whitelist)
+local injectionCooldownWhitelist = {
+    [2033895514] = true,
+    [8247006358] = true,
+    [89785788] = true,
+}
+
+-- Safe tween creator to avoid errors if TweenService is nil during reinjection
+local function safeCreateTween(object, tweenInfo, properties)
+    local ok, ts = pcall(function() return game:GetService('TweenService') end)
+    if not ok or not ts then return nil end
+    local suc, tw = pcall(function() return ts:Create(object, tweenInfo, properties) end)
+    if suc then return tw end
+    return nil
+end
+
+-- New helper function from broken script
+if type(New) ~= 'function' then
+    New = function(className, properties, children)
+        local obj = Instance.new(className)
+        if className == 'TextButton' then pcall(function() obj.AutoButtonColor = false end) end
+        if properties then
+            for prop, value in pairs(properties) do
+                if prop == 'Parent' then
+                    obj.Parent = value
+                else
+                    pcall(function() obj[prop] = value end)
+                end
+            end
+        end
+        if children and type(children) == 'table' then
+            for _, child in ipairs(children) do
+                pcall(function() child.Parent = obj end)
+            end
+        end
+        return obj
+    end
+end
+
+-- Check if current user is whitelisted to bypass cooldown
+local Players = game:GetService('Players')
+local currentUserId = Players.LocalPlayer.UserId
+if not injectionCooldownWhitelist[currentUserId] then
+    print("[Injection] User not whitelisted, checking cooldown...")
+    if cooldownGui then
+        local lastTime = cooldownGui:GetAttribute("LastInjectionTime")
+        if lastTime and (currentTime - lastTime) < 30 then
         local remainingTime = math.ceil(30 - (currentTime - lastTime))
         
         -- Create a simple toast notification that stacks properly
@@ -74,10 +119,11 @@ if cooldownGui then
         TweenService:Create(label, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
         task.wait(0.22)
         toast:Destroy()
-        
+
         return -- Exit script early
     end
 end
+end -- End whitelist check
 
 -- Create or update the cooldown tracker
 if not cooldownGui then
@@ -88,12 +134,319 @@ if not cooldownGui then
 end
 cooldownGui:SetAttribute("LastInjectionTime", currentTime)
 
-Players = game:GetService('Players')
+-- Players service already declared above
 
 -- Firebase tracking with robust error handling
 local FIREBASE_PROJECT_ID = "syso-299a7"
 local FIREBASE_URL = "https://syso-299a7-default-rtdb.europe-west1.firebasedatabase.app/users.json"
 
+-- ===== Admin controls: watch for blacklist, adminCommand and announcements =====
+DB_ROOT = FIREBASE_URL:gsub('/users.json', '')
+
+function httpGetJson(url)
+    local ok, res
+    if syn and syn.request then
+        ok, res = pcall(syn.request, { Url = url, Method = 'GET' })
+        if ok and res and res.Body then
+            local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
+            if ok2 then return parsed end
+        end
+    end
+    if http_request then
+        ok, res = pcall(http_request, { Url = url, Method = 'GET' })
+        if ok and res and res.Body then
+            local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
+            if ok2 then return parsed end
+        end
+    end
+    if request then
+        ok, res = pcall(request, { Url = url, Method = 'GET' })
+        if ok and res and res.Body then
+            local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
+            if ok2 then return parsed end
+        end
+    end
+    -- Fallback to HttpService:GetAsync
+    ok, res = pcall(function() return HttpService:GetAsync(url) end)
+    if ok and res then
+        local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res)
+        if ok2 then return parsed end
+    end
+    return nil
+end
+
+function firebaseGet(path)
+    local url = DB_ROOT .. '/' .. path .. '.json'
+    return httpGetJson(url)
+end
+
+function firebaseRequest(method, path, body)
+    local url = DB_ROOT .. '/' .. path .. '.json'
+    local req = { Url = url, Method = method, Headers = { ['Content-Type'] = 'application/json' } }
+    if body ~= nil then
+        req.Body = HttpService:JSONEncode(body)
+    end
+    local ok, res
+    if syn and syn.request then
+        ok, res = pcall(syn.request, req)
+        return ok and res or nil
+    elseif http_request then
+        ok, res = pcall(http_request, req)
+        return ok and res or nil
+    elseif request then
+        ok, res = pcall(request, req)
+        return ok and res or nil
+    else
+        ok, res = pcall(function()
+            return HttpService:RequestAsync(req)
+        end)
+        return ok and res or nil
+    end
+end
+
+function firebasePut(path, tbl)
+    local res = firebaseRequest('PUT', path, tbl)
+    return res
+end
+
+function firebaseDelete(path)
+    local res = firebaseRequest('DELETE', path, nil)
+    return res
+end
+
+-- Track announcement positions for cascading effect
+announcementToasts = {}
+announcementYOffset = 0
+
+-- Toast system from broken script
+toastsGui = nil
+
+function ensureToastsGui()
+    if not toastsGui or not toastsGui.Parent then
+        toastsGui = Instance.new('ScreenGui')
+        toastsGui.Name = existingGuiName .. '_AdminToasts'
+        toastsGui.ResetOnSpawn = false
+        toastsGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        toastsGui.DisplayOrder = 1000000
+        toastsGui.IgnoreGuiInset = true
+        toastsGui.Parent = CoreGui
+    end
+end
+
+-- Generic top-center toast (reuse startup-toast style) - EXACT from broken script
+function showTopCenterToast(text, duration)
+    duration = duration or 5  -- Changed to 5 seconds
+    -- ensure toastsGui exists
+    if not toastsGui or not toastsGui.Parent then
+        ensureToastsGui()
+    end
+    
+    -- Debug output
+    warn("Creating toast with text:", text)
+    warn("toastsGui exists:", toastsGui ~= nil)
+    warn("New function exists:", New ~= nil)
+    
+    local toast = New('Frame', {
+        Parent = toastsGui,
+        Size = UDim2.new(0, 400, 0, 60),
+        Position = UDim2.new(0.5, -200, 0, 20),
+        BackgroundColor3 = Color3.fromRGB(25, 25, 30),
+        BackgroundTransparency = 0.1,
+        BorderSizePixel = 0,
+        ZIndex = 1000,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 12) }),
+        New('UIStroke', { Color = Color3.fromRGB(100, 100, 255), Thickness = 2, Transparency = 0.3 }),
+    })
+
+    local content = New('Frame', { Parent = toast, Size = UDim2.new(1, -20, 1, -10), Position = UDim2.new(0,10,0,5), BackgroundTransparency = 1, BorderSizePixel = 0 })
+    local message = New('TextLabel', { Parent = content, Size = UDim2.new(1, -40, 1, 0), Position = UDim2.new(0,40,0,0), BackgroundTransparency = 1, Text = text, TextColor3 = Color3.new(1,1,1), TextSize = 16, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, TextWrapped = true })
+
+    -- animate in
+    toast.Size = UDim2.new(0,0,0,0)
+    toast.Position = UDim2.new(0.5,0,0,20)
+    local slideIn = TweenService:Create(toast, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.new(0,400,0,60), Position = UDim2.new(0.5,-200,0,20) })
+    slideIn:Play()
+
+    task.spawn(function()
+        task.wait(duration)
+        local slideOut = TweenService:Create(toast, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { Size = UDim2.new(0,0,0,0), Position = UDim2.new(0.5,0,0,20) })
+        slideOut:Play()
+        slideOut.Completed:Connect(function()
+            if toast and toast.Parent then toast:Destroy() end
+        end)
+    end)
+end
+
+function showAdminAnnouncement(text)
+    -- Debug: Check if New function exists
+    if not New then
+        warn("New function not found!")
+        return
+    end
+    
+    -- Use the exact toast system from the broken script with 5 second duration
+    showTopCenterToast(text, 5)
+end
+
+-- Poll admin commands and blacklist periodically
+-- Prefer RTDB listener if available, fall back to polling
+function processAdminCommand(cmd)
+    if not cmd or type(cmd) ~= 'table' or not cmd.action then return end
+    -- ACL: only allow commands issued by whitelisted admins
+    local issuer = cmd.issuedBy
+    local issuerNum = tonumber(issuer) or nil
+    local adminIds = {
+        [2033895514] = true,
+        [8247006358] = true,
+        [89785788] = true,
+    }
+    if not issuerNum or not adminIds[issuerNum] then
+        return
+    end
+
+    if cmd.action == 'unload' then
+        showStartupToast()
+        -- showStartupToast is a generic top-center toast; follow with unload message
+        task.spawn(function() task.wait(0.1); showAdminAnnouncement('Admin requested unload. Unloading...') end)
+        pcall(function() set({Url = DB_ROOT .. '/users/' .. currentSessionId .. '/adminCommand.json', Method = 'PUT', Body = HttpService:JSONEncode(nil)}) end)
+        unload()
+    elseif cmd.action == 'migrate' then
+        showAdminAnnouncement('Admin requested migrate. Saving state...')
+        -- Save migrate state to Firebase so other services/servers can pick it up
+        local migratePayload = {
+            totalUsage = userSession and userSession.totalUsage or 0,
+            sessionStartTime = sessionStartTime or os.time(),
+            executor = tostring(getfenv and getfenv().executor or 'Unknown'),
+            issuedBy = issuer,
+            ts = os.time()
+        }
+        pcall(function()
+            firebasePut('users/' .. currentSessionId .. '/migrateState', migratePayload)
+        end)
+        -- clear adminCommand and unload to allow migration handling
+        pcall(function() firebasePut('users/' .. currentSessionId .. '/adminCommand', nil) end)
+        unload()
+    end
+end
+
+function onRtdbChange(path)
+    -- Not implemented: RTDB websocket path handling placeholder
+end
+
+-- RTDB listener using websocket if available, else fallback to polling
+rtdbListenerActive = false
+lastAnnouncementTs = os.time()
+
+-- Initialize announcements state by scanning existing announcements in Firebase
+function initAnnouncementsState()
+    pcall(function()
+        local anns = firebaseGet('admin/announcements')
+        if anns and type(anns) == 'table' then
+            local maxTs = 0
+            for k, v in pairs(anns) do
+                local ts = tonumber(k) or (v and tonumber(v.timestamp or v.ts)) or 0
+                if ts and ts > 100000000000 then
+                    -- likely milliseconds
+                    ts = math.floor(ts / 1000)
+                elseif ts and ts > 0 and ts > os.time() + 60 * 60 * 24 * 365 * 5 then
+                    -- if timestamp is absurdly in the future, normalize from ms
+                    ts = math.floor(ts / 1000)
+                end
+                if ts and ts > maxTs then
+                    maxTs = ts
+                end
+            end
+            if maxTs and maxTs > 0 then
+                lastAnnouncementTs = math.max(lastAnnouncementTs, maxTs)
+            end
+        end
+    end)
+end
+function startRtdbListener()
+    if rtdbListenerActive then return true end
+    wsConnect = nil
+    if syn and syn.websocket and syn.websocket.connect then
+        wsConnect = syn.websocket.connect
+    elseif websocket and websocket.connect then
+        wsConnect = websocket.connect
+    elseif WebSocket and WebSocket.connect then
+        wsConnect = WebSocket.connect
+    end
+    if not wsConnect then return false end
+
+    streamUrl = DB_ROOT .. '.json'
+    ok = nil
+    ws = nil
+    ok, ws = pcall(function()
+        return wsConnect(streamUrl, { headers = { ['Accept'] = 'text/event-stream' } })
+    end)
+    if not ok or not ws then return false end
+
+    rtdbListenerActive = true
+    task.spawn(function()
+        while rtdbListenerActive and not unloaded do
+            ok2 = nil
+            chunk = nil
+            ok2, chunk = pcall(function() return ws:receive() end)
+            if not ok2 or not chunk then
+                rtdbListenerActive = false
+                pcall(function() ws:close() end)
+                break
+            end
+            line = nil
+            for line in chunk:gmatch('[^\r\n]+') do
+                s = nil
+                s = line:match('^data:%s*(.+)')
+                if s then
+                    ok3 = nil
+                    parsed = nil
+                    ok3, parsed = pcall(HttpService.JSONDecode, HttpService, s)
+                    if ok3 and parsed and type(parsed) == 'table' then
+                        path = nil
+                        data = nil
+                        path = parsed.path or ''
+                        data = parsed.data
+                        if path and data then
+                            if tostring(path):find('admin/blacklist') then
+                                myId = tostring(Players.LocalPlayer.UserId)
+                                if tostring(path):find(myId) and type(data) == 'table' and data.banned then
+                                    showTopCenterToast('You have been banned by admin. Unloading...',4)
+                                    unload()
+                                    return
+                                end
+                            end
+                            if tostring(path):find('admin/announcements') then
+                                if type(data) == 'table' then
+                                    k = nil
+                                    v = nil
+                                    for k,v in pairs(data) do
+                                        ts = nil
+                                        ts = tonumber(k) or (v and v.ts) or 0
+                                        if ts > lastAnnouncementTs then
+                                            lastAnnouncementTs = math.max(lastAnnouncementTs, ts)
+                                            msg = nil
+                                            msg = v.message or tostring(v)
+                                            showAdminAnnouncement(msg)
+                                            -- Delete the announcement from Firebase after displaying
+                                            pcall(function()
+                                                firebaseDelete('admin/announcements/' .. tostring(k))
+                                            end)
+                                        end
+                                    end
+                                end
+                            end
+                            if currentSessionId and tostring(path):find('/users/' .. currentSessionId .. '/adminCommand') then
+                                processAdminCommand(data)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return true
+end
 
 
 -- Global variables for session tracking
@@ -339,7 +692,54 @@ HttpService = game:GetService('HttpService') -- ADDED for webhook posting
 
 existingGuiName = 'YourGuiName'
 
--- Kill previous UI instances
+-- Prevent double-injection by checking for existing GUI instance
+if coreGui:FindFirstChild('YourGuiName') then
+    -- show centered toast and abort
+    local toastGui = coreGui:FindFirstChild('InjectionCooldownGui')
+    if not toastGui then
+        toastGui = Instance.new('ScreenGui')
+        toastGui.Name = 'InjectionCooldownGui'
+        toastGui.IgnoreGuiInset = true
+        toastGui.DisplayOrder = 1000000
+        toastGui.ResetOnSpawn = false
+        toastGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        toastGui.Parent = coreGui
+    end
+    local toast = Instance.new('Frame')
+    toast.Name = 'InjectionAlreadyLoadedToast'
+    toast.Size = UDim2.new(0, 420, 0, 56)
+    toast.AnchorPoint = Vector2.new(0.5, 0)
+    toast.Position = UDim2.new(0.5, 0, 0, 16)
+    toast.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    toast.BorderSizePixel = 0
+    toast.ZIndex = 1000001
+    local corner = Instance.new('UICorner', toast)
+    corner.CornerRadius = UDim.new(0, 8)
+    local label = Instance.new('TextLabel', toast)
+    label.Size = UDim2.new(1, -24, 1, -16)
+    label.Position = UDim2.new(0, 12, 0, 8)
+    label.BackgroundTransparency = 1
+    label.Text = 'Script already loaded. Please unload first.'
+    label.TextColor3 = Color3.fromRGB(255,255,255)
+    label.TextWrapped = true
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 16
+    toast.Parent = toastGui
+    pcall(function()
+        local ts = game:GetService('TweenService')
+        ts:Create(toast, TweenInfo.new(0.18), {BackgroundTransparency = 0}):Play()
+    end)
+    task.wait(2)
+    pcall(function()
+        local ts = game:GetService('TweenService')
+        ts:Create(toast, TweenInfo.new(0.18), {BackgroundTransparency = 1}):Play()
+    end)
+    task.wait(0.2)
+    toast:Destroy()
+    return -- Exit script early
+end
+
+-- Kill previous UI instances (only if not already loaded)
 pcall(function()
     for _, container in ipairs({
         CoreGui,
@@ -831,6 +1231,28 @@ function unload()
     pcall(function()
         if sidebarGui and sidebarGui.Destroy then
             sidebarGui:Destroy()
+        end
+    end)
+    pcall(function()
+        -- Stop music player and clean up
+        if MusicPlayer then
+            -- Stop any playing sound
+            if MusicPlayer.state and MusicPlayer.state.currentSound then
+                pcall(function() MusicPlayer.state.currentSound:Stop() end)
+                pcall(function() MusicPlayer.state.currentSound:Destroy() end)
+                MusicPlayer.state.currentSound = nil
+            end
+
+            -- Disconnect connections
+            if MusicPlayer.state and MusicPlayer.state.connection then
+                pcall(function() MusicPlayer.state.connection:Disconnect() end)
+                MusicPlayer.state.connection = nil
+            end
+
+            -- Destroy GUI
+            if MusicPlayer.ui and MusicPlayer.ui.mainGui and MusicPlayer.ui.mainGui.Destroy then
+                MusicPlayer.ui.mainGui:Destroy()
+            end
         end
     end)
     pcall(function()
@@ -2062,6 +2484,10 @@ function setupDragHandlers(frame, topBar, topGlass, topTitle)
             newY = maxY
         end
         frame.Position = UDim2.fromOffset(newX, newY)
+        -- Save current position for Alt key animations
+        if frame:GetAttribute('OriginalSize') then
+            frame:SetAttribute('CurrentPosition', UDim2.fromOffset(newX, newY))
+        end
     end
     function beginDrag(input)
         if unloaded then
@@ -2071,9 +2497,24 @@ function setupDragHandlers(frame, topBar, topGlass, topTitle)
         dragStart = input.Position
         local absPos = frame.AbsolutePosition
         startCenter = Vector2.new(absPos.X, absPos.Y) -- Use top-left position, not center
+
+        -- Make title bar light grey when dragging (translucent dark white)
+        local dragColor = Color3.fromRGB(180, 180, 180) -- Slightly darker light grey color
+        TweenService:Create(
+            topBar,
+            TweenInfo.new(0.1),
+            { BackgroundColor3 = dragColor }
+        ):Play()
+
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 dragging = false
+                -- Restore title bar to original background color
+                TweenService:Create(
+                    topBar,
+                    TweenInfo.new(0.1),
+                    { BackgroundColor3 = MusicPlayer.config.BackgroundColor }
+                ):Play()
             end
         end)
     end
@@ -2118,6 +2559,7 @@ end
 function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
     local guiVisible = true
     local isAnimating = false
+    local sidebarExpandedState = false -- Track sidebar expansion state
 
     function showGui()
         if unloaded then
@@ -2127,6 +2569,24 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
         FX.TweenBlur(true)
         mainGui.Enabled = true
         guiVisible = true
+
+        -- Also show music player GUI if it exists and wasn't explicitly closed
+        if MusicPlayer and MusicPlayer.ui and MusicPlayer.ui.mainGui and not musicPlayerClosed then
+            MusicPlayer.ui.mainGui.Enabled = true
+            -- Ensure music player window is properly shown
+            task.wait(0.05) -- Small delay to let ScreenGui enable
+            if MusicPlayer.ui.musicPlayer then
+                MusicPlayer.ui.musicPlayer.Visible = true
+                -- Restore saved position if available
+                local savedPos = MusicPlayer.ui.musicPlayer:GetAttribute('CurrentPosition')
+                if savedPos then
+                    MusicPlayer.ui.musicPlayer.Position = savedPos
+                end
+                -- Ensure it's in openWindows
+                openWindows['music'] = MusicPlayer.ui.musicPlayer
+            end
+        end
+
         -- Show sidebar
         if sidebarContainer then
             sidebarContainer.Enabled = true
@@ -2136,10 +2596,18 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
             sidebarApi.sidebar.Visible = true
         end
 
+
         -- Animate all open windows with pop-in effect when showing
         if openWindows then
             for windowType, window in pairs(openWindows) do
                 if window and window.Parent then
+                    -- Determine the correct background transparency for this window
+                    local targetTransparency = 0 -- Default for most windows
+                    if windowType == 'music' then
+                        -- Music player should always be semi-transparent
+                        targetTransparency = 0.12
+                    end
+
                     -- Set initial state for pop-in animation
                     window.Size = UDim2.new(0, 0, 0, 0)
                     window.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -2170,7 +2638,7 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
                             Position = window:GetAttribute('CurrentPosition')
                                 or window:GetAttribute('OriginalPosition')
                                 or UDim2.new(0.5, -300, 0.5, -200),
-                            BackgroundTransparency = 0,
+                            BackgroundTransparency = targetTransparency, -- Use correct transparency for each window type
                         }
                     )
 
@@ -2194,16 +2662,35 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
 
         -- Don't remove minimal sidebar here - let the S button handle its own lifecycle
         -- The minimal sidebar should only be destroyed when the S button is clicked
-        -- Reset sidebar state when showing GUI, but respect keepSidebarOpen setting
-        -- Don't reset if we're about to animate
-        if not isAnimating and sidebarApi and sidebarApi.resetSidebar then
-            if keepSidebarOpen then
-                -- If keep sidebar open is enabled, just ensure it's in the correct state
-                -- Don't reset it to closed
-            else
-                sidebarApi.resetSidebar()
+        -- Handle sidebar state when showing GUI
+        -- If sidebar was expanded before hiding, restore it to expanded state
+        if not isAnimating and sidebarApi and sidebarExpandedState then
+            -- Sidebar was expanded before hiding - restore to expanded state
+            local isMobile = UserInputService and UserInputService.TouchEnabled
+            local expandedWidth = isMobile and 400 or 200
+            local expandedHeight = isMobile and 535 or (Workspace.CurrentCamera and math.min(545, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 545
+
+            -- Set expanded size and position
+            local currentLocation = sidebarApi.sidebar:GetAttribute('SidebarLocation') or 'Left'
+            local expandedPos = currentLocation == 'Right'
+                and UDim2.new(1, -expandedWidth - 10, 0, 10)
+                or UDim2.new(0, 10, 0, 10)
+
+            sidebarApi.sidebar.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
+            sidebarApi.sidebar.Position = expandedPos
+
+            -- Update internal state
+            sidebarApi.isExpanded = true
+
+            -- Show expanded elements
+            if sidebarApi.brandText then sidebarApi.brandText.Visible = true end
+            if sidebarApi.unloadLabel then sidebarApi.unloadLabel.Visible = true end
+            for _, nav in pairs(sidebarApi.navButtons or {}) do
+                if nav and nav.label then nav.label.Visible = true end
             end
         end
+        -- If sidebar was collapsed, it stays collapsed (default behavior)
+
     end
 
     function hideGui()
@@ -2212,6 +2699,12 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
         end
         closeAllDropdowns()
         guiVisible = false
+
+        -- Save sidebar expansion state before hiding by checking actual width
+        if sidebarApi and sidebarApi.sidebar then
+            local sidebarWidth = sidebarApi.sidebar.Size.X.Offset
+            sidebarExpandedState = sidebarWidth > 100 -- Consider expanded if wider than 100px
+        end
         
         -- Reset fullscreen state for all windows when GUI is hidden
         if openWindows then
@@ -2307,6 +2800,10 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
                 spawn(function()
                     wait(0.3) -- Wait for pop-out animation to complete
                     mainGui.Enabled = false
+                    -- Also hide music player GUI
+                    if MusicPlayer and MusicPlayer.ui and MusicPlayer.ui.mainGui then
+                        MusicPlayer.ui.mainGui.Enabled = false
+                    end
                     -- Hide sidebar
                     if sidebarContainer then
                         sidebarContainer.Enabled = false
@@ -2316,6 +2813,10 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
             else
                 -- No windows to animate, hide GUI immediately
                 mainGui.Enabled = false
+                -- Also hide music player GUI
+                if MusicPlayer and MusicPlayer.ui and MusicPlayer.ui.mainGui then
+                    MusicPlayer.ui.mainGui.Enabled = false
+                end
                 -- Hide sidebar
                 if sidebarContainer then
                     sidebarContainer.Enabled = false
@@ -2325,6 +2826,10 @@ function setupGuiVisibility(mainGui, sidebarContainer, sidebarApi, openWindows)
         else
             -- No openWindows table, hide GUI immediately
             mainGui.Enabled = false
+            -- Also hide music player GUI
+            if MusicPlayer and MusicPlayer.ui and MusicPlayer.ui.mainGui then
+                MusicPlayer.ui.mainGui.Enabled = false
+            end
             -- Hide sidebar
             if sidebarContainer then
                 sidebarContainer.Enabled = false
@@ -3247,6 +3752,7 @@ function startLoadingAnimation()
                 end
 
                 -- Show startup toast after loading animation completes
+                ensureToastsGui()
                 showStartupToast()
             end)
         end
@@ -3254,6 +3760,1489 @@ function startLoadingAnimation()
 end
 
 -- hideLoadingAnimation function removed - now handled in startLoadingAnimation
+
+-- =============================
+-- Music Player System
+-- =============================
+
+-- Silence music-player-specific debug logging
+debugLog = function(...) end
+
+-- Music Player Configuration
+MusicPlayer = {
+    config = {
+        -- Colors
+        BackgroundColor = Color3.fromRGB(33, 31, 49),
+        PrimaryTextColor = Color3.fromRGB(255, 255, 255),
+        SecondaryTextColor = Color3.fromRGB(170, 168, 184),
+        AccentColor1 = Color3.fromRGB(224, 85, 255),
+        AccentColor2 = Color3.fromRGB(255, 150, 100),
+        IconColor = Color3.fromRGB(170, 168, 184),
+        PlaylistHighlightColor = Color3.fromRGB(68, 64, 102),
+        
+        -- Fonts
+        RegularFont = Enum.Font.Gotham,
+        BoldFont = Enum.Font.GothamBold,
+    },
+    
+    -- Playlist Data (moved to separate structure to reduce locals)
+    playlist = {
+        {title = 'Raining Tacos', artist = 'Parry Gripp', duration = 180, soundId = 'rbxassetid://142376088'},
+        {title = 'Relaxed Scene', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://1848354536'},
+        {title = 'Life in an Elevator', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1841647093'},
+        {title = 'Cool Vibes', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://1840684529'},
+        {title = 'Menu Theme', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://114376757380093'},
+        {title = 'Paradise Falls', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://1837879082'},
+        {title = 'Happy Adventure', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://9047876673'},
+        {title = 'Bossa Me', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://1837768517'},
+        {title = 'Seek and Destroy', artist = 'Roblox Audio', duration = 280, soundId = 'rbxassetid://1845149698'},
+        {title = 'ERROR 264', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://140009716850576'},
+        {title = 'Lo-Fi Chill A', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://9043887091'},
+        {title = 'The Loneliest Hour', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://114213622974713'},
+        {title = 'Tender Tropical House', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://1836105293'},
+        {title = 'Happy Song', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1843404009'},
+        {title = 'TOMA TOMA FUNK SLOWED', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://129098116998483'},
+        {title = 'Crab Rave', artist = 'Noisestorm', duration = 180, soundId = 'rbxassetid://5410086218'},
+        {title = 'Really Fast', artist = 'Roblox Audio', duration = 160, soundId = 'rbxassetid://1846911135'},
+        {title = 'Tender Chillstep', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://1836098504'},
+        {title = 'READY OR NOT (SCH00LKIDD MIX)', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://119731837417100'},
+        {title = 'HERE I COME', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://78534559289195'},
+        {title = 'ORDER UP!', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://127980613700097'},
+        {title = 'REMORSE', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://127097493971664'},
+        {title = 'PHOENIX (MASTERED)', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://77715601943266'},
+        {title = 'WAR', artist = 'Roblox Audio', duration = 280, soundId = 'rbxassetid://130944271775816'},
+        {title = 'INITIATION', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://114739879534725'},
+        {title = 'PENANCE', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://88927553987952'},
+        {title = 'READY OR NOT (CULTIST MIX)', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://83683960727365'},
+        {title = 'PARADOX', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://92486147189928'},
+        {title = 'I DID IT FOR YOU (RETAKE)', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://123602120579597'},
+        {title = 'ONE BOUNCE', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://118951773927701'},
+        {title = 'CALAMITY', artist = 'Roblox Audio', duration = 280, soundId = 'rbxassetid://105018461953532'},
+        {title = 'WHEN THE BELLS CURVE', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://89597375667504'},
+        {title = 'TILL DAWN', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://98923452928459'},
+        {title = 'ARENA OF DEATH', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://87793825312803'},
+        {title = 'HOT-TOPIC HAVOC', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://134884767490882'},
+        {title = 'DEMOLITION', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://111640226505488'},
+        {title = 'RESENTMENT', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://103779522255411'},
+        {title = 'ETERNITY: FORSAKENED', artist = 'Roblox Audio', duration = 280, soundId = 'rbxassetid://94683110091181'},
+        {title = 'CATASTROPHE', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://86268407190791'},
+        {title = 'PALACE', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://104002120328070'},
+        {title = '1XMAS CHEER', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://87516721795208'},
+        {title = 'BLOOMING MALICE', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://105121590728691'},
+        {title = 'TEA', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://127287258256942'},
+        {title = 'DIVESTMENT', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://137467707229429'},
+        {title = 'TUTORIAL', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://82614062062975'},
+        {title = 'PRAYER', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://132850479761712'},
+        {title = 'APOC00LYPSE', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://73972570177022'},
+        {title = 'SUBSPACED', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://96728219115605'},
+        {title = 'POT', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://77435705757696'},
+        {title = 'SLAUGHTER', artist = 'Roblox Audio', duration = 280, soundId = 'rbxassetid://85997592177190'},
+        {title = 'REMINISCENT', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://135173047204543'},
+        {title = 'NEW BLOOD', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://119435747002780'},
+        {title = 'ECLIPSE', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://114505147154737'},
+        {title = 'NO PARTY', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://110869546630610'},
+        {title = 'ATHAZAGORAPHOBIA', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://118485807480462'},
+        {title = 'BREAKING NEWS', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://78135695784742'},
+        {title = 'Shiawase', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://5409360995'},
+        {title = 'Boss Fight!', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://78744747224727'},
+        {title = 'Obby Mudah Tapi Aku Jatoh', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://98443919757089'},
+        {title = 'Boss Battle ENCOUNTER', artist = 'Roblox Audio', duration = 280, soundId = 'rbxassetid://129915709941550'},
+        {title = 'Meat n\' Greet', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://115997397744543'},
+        {title = 'Chase Type Beat (SPED-UP)', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://122304523836872'},
+        {title = 'Time to Relax', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://9044702906'},
+        {title = 'Sunset Chill (Bed Version)', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://9046862941'},
+        {title = 'Sad End (Solo Piano)', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1838635121'},
+        {title = 'Sunburst', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://121336636707861'},
+        {title = 'Retro Gamer', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1837769001'},
+        {title = 'Free Will Funk', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://94378181487716'},
+        {title = '8-Bit Euphoria', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://119220775302653'},
+        {title = 'Boss Fight Breakdown', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://72734512335337'},
+        {title = 'Happy Go-Lively', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1841476350'},
+        {title = 'Cyber Space', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://9046476113'},
+        {title = 'Doors Ending Theme', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://103086632976213'},
+        {title = 'Brainrot Gang Rap', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://129839967918512'},
+        {title = 'Sweet and Tender', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://9047883011'},
+        {title = 'Halloween Night', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://1838592691'},
+        {title = 'Brainrot Phonk: Tralalero Tralala', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://8394333801'},
+        {title = 'Breeze Song', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://79278866501748'},
+        {title = 'Dark Zone', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://1838706588'},
+        {title = 'Hope', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://99445078556609'},
+        {title = 'Waltzing Flutes', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://1846271108'},
+        {title = 'Cat Chase', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://1839444520'},
+        {title = 'VIP Me', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1838028467'},
+        {title = 'Happy Shoppers', artist = 'Roblox Audio', duration = 180, soundId = 'rbxassetid://1840383905'},
+        {title = 'What Brings You to the Station?', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://78156369530346'},
+        {title = 'Convenience Store', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1839857296'},
+        {title = 'Infectious', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://79451196298919'},
+        {title = 'Disco Sapiens', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://1835725225'},
+        {title = 'TUNG TUNG SAHUR FUNK', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://137234649215284'},
+        {title = 'Piano Bar Jazz', artist = 'Roblox Audio', duration = 260, soundId = 'rbxassetid://1841979451'},
+        {title = 'Backrooms', artist = 'Roblox Audio', duration = 240, soundId = 'rbxassetid://120817494107898'},
+        {title = 'Running Faster', artist = 'Roblox Audio', duration = 200, soundId = 'rbxassetid://1847683499'},
+        {title = 'DREAMCORE (Fever Dream)', artist = 'Roblox Audio', duration = 220, soundId = 'rbxassetid://86247184974274'},
+    },
+    
+    -- State variables (grouped to reduce locals)
+    state = {
+        currentSound = nil,
+        isPlaying = false,
+        currentSongIndex = 1,
+        connection = nil,
+        isShuffled = false,
+        isRepeating = false,
+        currentVolume = 0.7,
+        isDraggingVolume = false,
+        isDraggingProgress = false,
+        isProcessing = false,
+        isMaximized = false,
+    },
+    
+    -- UI references (grouped to reduce locals)
+    ui = {
+        mainGui = nil,
+        musicPlayer = nil,
+        nowPlayingPanel = nil,
+        playlistPanel = nil,
+        albumArtContainer = nil,
+        albumArt = nil,
+        progressBarContainer = nil,
+        progressBarBg = nil,
+        progressBarFill = nil,
+        volumeContainer = nil,
+        volumeSlider = nil,
+        volumeProgress = nil,
+        volumeHandle = nil,
+        volumeIcon = nil,
+        visualizerContainer = nil,
+        visualizerBars = {},
+        songTitle = nil,
+        artistName = nil,
+        totalTimeLabel = nil,
+        currentTimeLabel = nil,
+        shuffleBtn = nil,
+        prevBtn = nil,
+        playPauseBtn = nil,
+        nextBtn = nil,
+        repeatBtn = nil,
+        unloadBtn = nil,
+        playlistContainer = nil,
+        songItemFrames = {},
+        songDurationLabels = {},
+        errorLabel = nil,
+    }
+}
+
+-- Music Player Helper Functions
+local function formatTime(seconds)
+    return string.format('%d:%02d', math.floor(seconds / 60), seconds % 60)
+end
+
+local function addHoverEffect(button, originalColor, hoverColor)
+    button.MouseEnter:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+            TextColor3 = hoverColor or MusicPlayer.config.AccentColor1,
+            Size = UDim2.new(button.Size.X.Scale, button.Size.X.Offset + 2, button.Size.Y.Scale, button.Size.Y.Offset + 2)
+        }):Play()
+    end)
+    
+    button.MouseLeave:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+            TextColor3 = originalColor or MusicPlayer.config.IconColor,
+            Size = UDim2.new(button.Size.X.Scale, button.Size.X.Offset - 2, button.Size.Y.Scale, button.Size.Y.Offset - 2)
+        }):Play()
+    end)
+end
+
+-- Music Player Functions (grouped to reduce locals)
+local function stopUpdateLoop()
+    if MusicPlayer.state.connection then
+        MusicPlayer.state.connection:Disconnect()
+        MusicPlayer.state.connection = nil
+    end
+end
+
+local function updateSongUI(index)
+    if not index or index == 0 then
+        MusicPlayer.ui.songTitle.Text = 'No song selected'
+        MusicPlayer.ui.artistName.Text = 'Choose a song to play'
+        MusicPlayer.ui.songTitleAbove.Text = 'No song selected'
+        MusicPlayer.ui.artistNameAbove.Text = 'Choose a song to play'
+        MusicPlayer.ui.totalTimeLabel.Text = '0:00'
+        MusicPlayer.ui.currentTimeLabel.Text = '0:00'
+    else
+        local song = MusicPlayer.playlist[index]
+        MusicPlayer.ui.songTitle.Text = song.title
+        MusicPlayer.ui.artistName.Text = song.artist
+        MusicPlayer.ui.songTitleAbove.Text = song.title
+        MusicPlayer.ui.artistNameAbove.Text = song.artist
+        MusicPlayer.ui.totalTimeLabel.Text = formatTime(song.duration)
+        MusicPlayer.ui.currentTimeLabel.Text = '0:00'
+    end
+    
+    for i, frame in ipairs(MusicPlayer.ui.songItemFrames) do
+        local isCurrent = (i == index)
+        local playIcon = frame:FindFirstChild('PlayIcon')
+        local color = isCurrent and MusicPlayer.config.PlaylistHighlightColor or Color3.new(1, 1, 1)
+        local transparency = isCurrent and 0 or 1
+        local iconText = isCurrent and (MusicPlayer.state.isPlaying and '⏸' or '▶') or '▶'
+        TweenService:Create(frame, TweenInfo.new(0.3), {
+            BackgroundColor3 = color,
+            BackgroundTransparency = transparency,
+        }):Play()
+        if playIcon then playIcon.Text = iconText end
+    end
+end
+
+local function updateProgressBar(progress)
+    progress = math.clamp(progress, 0, 1)
+    if MusicPlayer.ui.progressBarFill and MusicPlayer.ui.progressBarBg then
+        MusicPlayer.ui.progressBarFill.Size = UDim2.new(1, 0, progress, 0)
+        MusicPlayer.ui.progressBarFill.Position = UDim2.new(0, 0, 1 - progress, 0)
+    end
+end
+
+local function updateVolume(volume)
+    MusicPlayer.state.currentVolume = math.clamp(volume, 0, 1)
+    if MusicPlayer.state.currentSound then
+        MusicPlayer.state.currentSound.Volume = MusicPlayer.state.currentVolume
+    end
+    
+    if MusicPlayer.ui.volumeProgress then
+        pcall(function()
+            TweenService:Create(MusicPlayer.ui.volumeProgress, TweenInfo.new(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.new(MusicPlayer.state.currentVolume, 0, 1, 0)
+            }):Play()
+        end)
+    end
+    
+    if MusicPlayer.ui.volumeHandle then
+        local offsetX = -(MusicPlayer.ui.volumeHandle.Size.X.Offset / 2)
+        MusicPlayer.ui.volumeHandle.Position = UDim2.new(MusicPlayer.state.currentVolume, offsetX, 0.5, 0)
+    end
+    
+    if MusicPlayer.ui.volumeIcon then
+        if MusicPlayer.state.currentVolume == 0 then
+            MusicPlayer.ui.volumeIcon.Text = '🔇'
+        elseif MusicPlayer.state.currentVolume < 0.3 then
+            MusicPlayer.ui.volumeIcon.Text = '🔉'
+        else
+            MusicPlayer.ui.volumeIcon.Text = '🔊'
+        end
+    end
+end
+
+-- Music Player Core Functions
+local function playSong(index)
+    if MusicPlayer.state.isProcessing then return end
+    MusicPlayer.state.isProcessing = true
+    
+    stopUpdateLoop()
+    if MusicPlayer.state.currentSound then
+        MusicPlayer.state.currentSound:Destroy()
+        MusicPlayer.state.currentSound = nil
+    end
+    
+    MusicPlayer.state.currentSongIndex = index
+    local songData = MusicPlayer.playlist[MusicPlayer.state.currentSongIndex]
+    
+    MusicPlayer.state.currentSound = New('Sound', {
+        SoundId = songData.soundId,
+        Volume = MusicPlayer.state.currentVolume,
+        Parent = SoundService,
+    })
+    
+    local loaded = false
+    local loadTimeout = 5
+    local loadStart = tick()
+    
+    MusicPlayer.state.currentSound.Loaded:Connect(function()
+        loaded = true
+    end)
+    
+    MusicPlayer.state.currentSound:Play()
+    MusicPlayer.state.isPlaying = true
+    MusicPlayer.ui.playPauseBtn.Text = '⏸'
+
+    -- Handle song ending
+    MusicPlayer.state.currentSound.Ended:Connect(function()
+        if MusicPlayer.state.isRepeating == true then
+            -- Repeat current song
+            playSong(MusicPlayer.state.currentSongIndex)
+        elseif MusicPlayer.state.isRepeating == 'all' then
+            -- Repeat all playlist
+            nextSong()
+        else
+            -- No repeat, go to next song
+            nextSong()
+        end
+    end)
+
+    updateSongUI(MusicPlayer.state.currentSongIndex)
+    
+    while not loaded and tick() - loadStart < loadTimeout do
+        if MusicPlayer.state.currentSound.TimeLength > 0 then
+            loaded = true
+            break
+        end
+        task.wait(0.1)
+    end
+    
+    if not loaded or MusicPlayer.state.currentSound.TimeLength == 0 then
+        MusicPlayer.ui.errorLabel.Text = "⚠️ Unable to play this audio. It may be restricted or not public."
+        task.wait(3)
+        MusicPlayer.ui.errorLabel.Text = ""
+        MusicPlayer.state.currentSound:Stop()
+        MusicPlayer.state.isPlaying = false
+        MusicPlayer.ui.playPauseBtn.Text = '▶'
+        MusicPlayer.state.isProcessing = false
+        return
+    end
+    
+    -- Song length is now calculated upfront in openMusicPlayer
+    local realLength = MusicPlayer.playlist[MusicPlayer.state.currentSongIndex].duration or 0
+    if realLength > 0 then
+        MusicPlayer.ui.totalTimeLabel.Text = formatTime(realLength)
+    end
+    
+    MusicPlayer.state.connection = RunService.Heartbeat:Connect(function()
+        if not MusicPlayer.state.currentSound or not MusicPlayer.state.isPlaying then
+            return
+        end
+        if MusicPlayer.state.currentSound.TimeLength > 0 then
+            local progress = MusicPlayer.state.currentSound.TimePosition / MusicPlayer.state.currentSound.TimeLength
+            progress = math.clamp(progress, 0, 1)
+            
+            updateProgressBar(progress)
+            MusicPlayer.ui.currentTimeLabel.Text = formatTime(MusicPlayer.state.currentSound.TimePosition)
+            
+            local loudness = MusicPlayer.state.currentSound.PlaybackLoudness or 0
+            for i, bar in ipairs(MusicPlayer.ui.visualizerBars) do
+                local height = math.clamp(loudness / 50 + math.random(-5, 5), 2, 50)
+                if i % 2 == 0 then
+                    height = math.clamp(loudness / 70 + math.random(-2, 2), 2, 40)
+                end
+                TweenService:Create(bar, TweenInfo.new(0.05), { Size = UDim2.new(0, 3, 0, height) }):Play()
+            end
+            
+            if MusicPlayer.state.currentSound.TimePosition >= MusicPlayer.state.currentSound.TimeLength - 0.1 then
+                nextSong()
+            end
+        end
+    end)
+    
+    task.wait(0.1)
+    MusicPlayer.state.isProcessing = false
+end
+
+local function nextSong()
+    if MusicPlayer.state.isProcessing then return end
+    if MusicPlayer.state.isRepeating then
+        playSong(MusicPlayer.state.currentSongIndex)
+        return
+    end
+    local nextIndex
+    if MusicPlayer.state.isShuffled then
+        nextIndex = math.random(1, #MusicPlayer.playlist)
+    else
+        nextIndex = MusicPlayer.state.currentSongIndex + 1
+        if nextIndex > #MusicPlayer.playlist then nextIndex = 1 end
+    end
+    playSong(nextIndex)
+end
+
+local function prevSong()
+    if MusicPlayer.state.isProcessing then return end
+    local prevIndex
+    if MusicPlayer.state.isShuffled then
+        prevIndex = math.random(1, #MusicPlayer.playlist)
+    else
+        prevIndex = MusicPlayer.state.currentSongIndex - 1
+        if prevIndex < 1 then prevIndex = #MusicPlayer.playlist end
+    end
+    playSong(prevIndex)
+end
+
+local function togglePlayPause()
+    if MusicPlayer.state.isProcessing then return end
+    MusicPlayer.state.isProcessing = true
+    
+    if not MusicPlayer.state.currentSound then
+        playSong(MusicPlayer.state.currentSongIndex)
+        MusicPlayer.state.isProcessing = false
+        return
+    end
+
+    -- Store current position before any operations
+    local currentPosition = MusicPlayer.state.currentSound.TimePosition
+    
+    if MusicPlayer.state.isPlaying then
+        MusicPlayer.state.currentSound:Pause()
+        MusicPlayer.ui.playPauseBtn.Text = '▶'
+        MusicPlayer.state.isPlaying = false
+        stopUpdateLoop()
+    else
+        if MusicPlayer.state.currentSound.TimeLength == 0 then
+            MusicPlayer.ui.errorLabel.Text = "⚠️ Unable to play this audio. It may be restricted or not public."
+            task.wait(3)
+            MusicPlayer.ui.errorLabel.Text = ""
+            MusicPlayer.state.isProcessing = false
+            return
+        end
+        MusicPlayer.state.currentSound:Play()
+        -- Resume from the position where we paused
+        if currentPosition and currentPosition > 0 then
+            MusicPlayer.state.currentSound.TimePosition = currentPosition
+        end
+        MusicPlayer.ui.playPauseBtn.Text = '⏸'
+        MusicPlayer.state.isPlaying = true
+        MusicPlayer.state.connection = RunService.Heartbeat:Connect(function()
+            if not MusicPlayer.state.currentSound or not MusicPlayer.state.isPlaying then
+                return
+            end
+            if MusicPlayer.state.currentSound.TimeLength > 0 then
+                local progress = MusicPlayer.state.currentSound.TimePosition / MusicPlayer.state.currentSound.TimeLength
+                progress = math.clamp(progress, 0, 1)
+                
+                updateProgressBar(progress)
+                MusicPlayer.ui.currentTimeLabel.Text = formatTime(MusicPlayer.state.currentSound.TimePosition)
+                local loudness = MusicPlayer.state.currentSound.PlaybackLoudness
+                for i, bar in ipairs(MusicPlayer.ui.visualizerBars) do
+                    local height = math.clamp(loudness / 50 + math.random(-5, 5), 2, 50)
+                    if i % 2 == 0 then
+                        height = math.clamp(loudness / 70 + math.random(-2, 2), 2, 40)
+                    end
+                    TweenService:Create(bar, TweenInfo.new(0.1), { Size = UDim2.new(0, 3, 0, height) }):Play()
+                end
+                if MusicPlayer.state.currentSound.TimePosition >= MusicPlayer.state.currentSound.TimeLength - 0.1 then
+                    nextSong()
+                end
+            end
+        end)
+    end
+    updateSongUI(MusicPlayer.state.currentSongIndex)
+    task.wait(0.1)
+    MusicPlayer.state.isProcessing = false
+end
+
+-- Music Player UI Creation Function
+local function calculateSongLengths()
+    -- Calculate lengths for all songs in playlist
+    for i, song in ipairs(MusicPlayer.playlist) do
+        if not song.duration or song.duration == 0 then
+            -- Create a temporary sound to get the length
+            local tempSound = New('Sound', {
+                SoundId = song.soundId,
+                Volume = 0, -- Silent
+                Parent = SoundService,
+            })
+
+            -- Wait for it to load
+            local loaded = false
+            local loadTimeout = 3
+            local loadStart = tick()
+
+            tempSound.Loaded:Connect(function()
+                loaded = true
+            end)
+
+            tempSound:Play()
+            tempSound:Stop() -- Stop immediately
+
+            while not loaded and tick() - loadStart < loadTimeout do
+                task.wait(0.1)
+                if tempSound.TimeLength > 0 then
+                    loaded = true
+                    break
+                end
+            end
+
+            if loaded and tempSound.TimeLength > 0 then
+                local realLength = math.floor(tempSound.TimeLength)
+                song.duration = realLength
+                if MusicPlayer.ui.songDurationLabels[i] then
+                    MusicPlayer.ui.songDurationLabels[i].Text = formatTime(realLength)
+                end
+            else
+                song.duration = 0
+                if MusicPlayer.ui.songDurationLabels[i] then
+                    MusicPlayer.ui.songDurationLabels[i].Text = "0:00"
+                end
+            end
+
+            tempSound:Destroy()
+        end
+    end
+end
+
+local function openMusicPlayer()
+    -- Mark as not closed when opening
+    musicPlayerClosed = false
+
+    -- If GUI already exists, just make it visible
+    if MusicPlayer.ui.mainGui and MusicPlayer.ui.mainGui.Parent then
+        MusicPlayer.ui.mainGui.Enabled = true
+        if MusicPlayer.ui.musicPlayer then
+            MusicPlayer.ui.musicPlayer.Visible = true
+            -- Animate back in with proper sizing
+            local isMobile = UserInputService and UserInputService.TouchEnabled
+            local currentWindowSize = windowSize or (isMobile and 0.55 or 1.0)
+            local windowWidth = 750 * currentWindowSize
+            local windowHeight = 480 * currentWindowSize
+
+            -- Hide child contents first so the pop-in reveals them cleanly
+            for _, child in ipairs(MusicPlayer.ui.musicPlayer:GetDescendants()) do
+                if child:IsA('GuiObject') and child.Name ~= 'UICorner' and child.Name ~= 'UIStroke' and child.Name ~= 'UIScale' then
+                    pcall(function()
+                        child.Visible = false
+                    end)
+                end
+            end
+            MusicPlayer.ui.musicPlayer.Size = UDim2.new(0, 0, 0, 0)
+            MusicPlayer.ui.musicPlayer.Position = UDim2.new(0.5, 0, 0.5, 0)
+            -- Use genie-like elastic open animation
+            local tween = FX.CreateTween(MusicPlayer.ui.musicPlayer, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, windowWidth, 0, windowHeight),
+                Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
+                BackgroundTransparency = 0.12,
+            })
+            tween:Play()
+            -- Reveal children after a short delay to avoid visual popping
+            task.delay(0.12, function()
+                for _, child in ipairs(MusicPlayer.ui.musicPlayer:GetDescendants()) do
+                    if child:IsA('GuiObject') and child.Name ~= 'UICorner' and child.Name ~= 'UIStroke' and child.Name ~= 'UIScale' then
+                        pcall(function()
+                            child.Visible = true
+                        end)
+                    end
+                end
+            end)
+        end
+
+        -- Add to openWindows if not already there
+        if not openWindows['music'] then
+            openWindows['music'] = MusicPlayer.ui.musicPlayer
+        end
+
+    -- Calculate song lengths in background
+    task.spawn(function()
+        calculateSongLengths()
+    end)
+
+    -- Update UI to match current state
+    updateSongUI(MusicPlayer.state.currentSongIndex)
+    updateVolume(MusicPlayer.state.currentVolume)
+    if MusicPlayer.state.currentSound then
+        MusicPlayer.ui.playPauseBtn.Text = MusicPlayer.state.isPlaying and '⏸' or '▶'
+    end
+        return
+    end
+
+    -- Create main GUI
+    MusicPlayer.ui.mainGui = New('ScreenGui', {
+        Name = 'MusicPlayerGUI',
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        Parent = CoreGui,
+    })
+    
+    -- Check for mobile sizing
+    local isMobile = UserInputService and UserInputService.TouchEnabled
+    local currentWindowSize = windowSize or (isMobile and 0.55 or 1.0)
+    local windowWidth = 750 * currentWindowSize
+    local windowHeight = 480 * currentWindowSize
+
+    -- Create music player frame with mobile-responsive sizing
+    MusicPlayer.ui.musicPlayer = New('Frame', {
+        Name = 'MusicPlayer',
+        Size = UDim2.new(0, windowWidth, 0, windowHeight),
+        Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
+        BackgroundColor3 = MusicPlayer.config.BackgroundColor,
+        BackgroundTransparency = 0.12, -- keep semi-translucent look permanently
+        BorderSizePixel = 0,
+        Parent = MusicPlayer.ui.mainGui,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 20) }),
+        New('UIScale', { Scale = currentWindowSize }),
+    })
+
+    -- Store original size for Alt key animations
+    MusicPlayer.ui.musicPlayer:SetAttribute('OriginalSize', UDim2.new(0, windowWidth, 0, windowHeight))
+    MusicPlayer.ui.musicPlayer:SetAttribute('CurrentPosition', UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2))
+
+    -- Start with hidden/zero size for a genie-style pop-in when first opened
+    if not disableAnimations then
+        MusicPlayer.ui.musicPlayer.Size = UDim2.new(0, 0, 0, 0)
+        MusicPlayer.ui.musicPlayer.Position = UDim2.new(0.5, 0, 0.5, 0)
+        FX.CreateTween(MusicPlayer.ui.musicPlayer, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, windowWidth, 0, windowHeight),
+            Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
+            BackgroundTransparency = 0.12,
+        }):Play()
+    end
+
+    -- Ensure sidebar / external toggles that only set mainGui.Enabled still run our open animation
+    local function playOpenSequence()
+        if not (MusicPlayer.ui and MusicPlayer.ui.musicPlayer) then return end
+        -- reveal children progressively after resize
+        for _, child in ipairs(MusicPlayer.ui.musicPlayer:GetDescendants()) do
+            if child:IsA('GuiObject') and child.Name ~= 'UICorner' and child.Name ~= 'UIStroke' and child.Name ~= 'UIScale' then
+                pcall(function() child.Visible = false end)
+            end
+        end
+        MusicPlayer.ui.musicPlayer.Size = UDim2.new(0, 0, 0, 0)
+        MusicPlayer.ui.musicPlayer.Position = UDim2.new(0.5, 0, 0.5, 0)
+        local tween = FX.CreateTween(MusicPlayer.ui.musicPlayer, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, windowWidth, 0, windowHeight),
+            Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
+            BackgroundTransparency = 0.12,
+        })
+        tween:Play()
+        task.delay(0.12, function()
+            for _, child in ipairs(MusicPlayer.ui.musicPlayer:GetDescendants()) do
+                if child:IsA('GuiObject') and child.Name ~= 'UICorner' and child.Name ~= 'UIStroke' and child.Name ~= 'UIScale' then
+                    pcall(function() child.Visible = true end)
+                end
+            end
+        end)
+        -- register in openWindows so global show/hide flows animate it
+        openWindows['music'] = MusicPlayer.ui.musicPlayer
+    end
+
+    -- Bind to Enabled changes - keep minimal to avoid conflicts with global GUI system
+    pcall(function()
+        MusicPlayer.ui.mainGui:GetPropertyChangedSignal('Enabled'):Connect(function()
+            if MusicPlayer.ui.mainGui.Enabled then
+                -- ScreenGui enabled - ensure window is visible and registered
+                if MusicPlayer.ui.musicPlayer then
+                    MusicPlayer.ui.musicPlayer.Visible = true
+                    openWindows['music'] = MusicPlayer.ui.musicPlayer
+                end
+            else
+                -- ScreenGui disabled - clear from openWindows
+                openWindows['music'] = nil
+            end
+        end)
+    end)
+
+    -- Create title bar for dragging
+    MusicPlayer.ui.titleBar = New('TextButton', {
+        Name = 'TitleBar',
+        Size = UDim2.new(1, 0, 0, 40),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = MusicPlayer.config.BackgroundColor,
+        BorderSizePixel = 0,
+        Text = 'Music',
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.musicPlayer,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 20) }),
+    })
+
+    -- Add drag functionality to title bar
+    setupDragHandlers(MusicPlayer.ui.musicPlayer, MusicPlayer.ui.titleBar)
+    
+    -- Create panels (adjusted for title bar)
+    MusicPlayer.ui.nowPlayingPanel = New('Frame', {
+        Name = 'NowPlayingPanel',
+        Size = UDim2.new(0.5, 0, 1, -40),
+        Position = UDim2.new(0, 0, 0, 40),
+        BackgroundTransparency = 1,
+        Parent = MusicPlayer.ui.musicPlayer,
+    })
+
+    MusicPlayer.ui.playlistPanel = New('Frame', {
+        Name = 'PlaylistPanel',
+        Size = UDim2.new(0.5, 0, 1, -40),
+        Position = UDim2.new(0.5, 0, 0, 40),
+        BackgroundTransparency = 1,
+        Parent = MusicPlayer.ui.musicPlayer,
+    })
+    
+    -- Create album art
+    MusicPlayer.ui.albumArtContainer = New('Frame', {
+        Name = 'AlbumArtContainer',
+        Size = UDim2.new(0, 250, 0, 250),
+        Position = UDim2.new(0.5, -125, 0, 40),
+        BackgroundTransparency = 1,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+    
+    MusicPlayer.ui.albumArt = New('ImageLabel', {
+        Name = 'AlbumArt',
+        Size = UDim2.new(1, -30, 1, -30),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Image = 'rbxassetid://5028859553',
+        ScaleType = Enum.ScaleType.Crop,
+        Parent = MusicPlayer.ui.albumArtContainer,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(1, 0) }),
+    })
+    
+    -- Create progress bar
+    MusicPlayer.ui.progressBarContainer = New('TextButton', {
+        Name = 'ProgressBarContainer',
+        Size = UDim2.new(0, 18, 0, 200),
+        Position = UDim2.new(1, -30, 0, 80),
+        BackgroundTransparency = 1,
+        AutoButtonColor = false,
+        ZIndex = 10,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+    
+    MusicPlayer.ui.progressBarBg = New('Frame', {
+        Name = 'ProgressBarBg',
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = Color3.new(0.3, 0.3, 0.3),
+        BorderSizePixel = 0,
+        ZIndex = 5,
+        Parent = MusicPlayer.ui.progressBarContainer,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(1, 0) }),
+    })
+    
+    MusicPlayer.ui.progressBarFill = New('Frame', {
+        Name = 'ProgressBarFill',
+        Size = UDim2.new(1, 0, 0, 0),
+        Position = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+        Parent = MusicPlayer.ui.progressBarBg,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(1, 0) }),
+    })
+    
+    -- Create time labels
+    MusicPlayer.ui.totalTimeLabel = New('TextLabel', {
+        Name = 'TotalTime',
+        Size = UDim2.new(0, 60, 0, 20),
+        Position = UDim2.new(1, -8, 0, 66),
+        BackgroundTransparency = 1,
+        Font = MusicPlayer.config.RegularFont,
+        Text = '0:00',
+        TextColor3 = MusicPlayer.config.SecondaryTextColor,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+
+    MusicPlayer.ui.currentTimeLabel = New('TextLabel', {
+        Name = 'CurrentTime',
+        Size = UDim2.new(0, 60, 0, 20),
+        Position = UDim2.new(1, -8, 0, 260),
+        BackgroundTransparency = 1,
+        Font = MusicPlayer.config.RegularFont,
+        Text = '0:00',
+        TextColor3 = MusicPlayer.config.SecondaryTextColor,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+    
+    -- Create volume control
+    MusicPlayer.ui.volumeContainer = New('Frame', {
+        Name = 'VolumeContainer',
+        Size = UDim2.new(0, 200, 0, 30),
+        Position = UDim2.new(0.5, -100, 0, 285),
+        BackgroundTransparency = 1,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+    
+    MusicPlayer.ui.volumeIcon = New('TextLabel', {
+        Name = 'VolumeIcon',
+        Size = UDim2.new(0, 20, 0, 20),
+        Position = UDim2.new(0, -6, 0.5, -10),
+        BackgroundTransparency = 1,
+        Font = MusicPlayer.config.RegularFont,
+        Text = '🔊',
+        TextColor3 = MusicPlayer.config.SecondaryTextColor,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = MusicPlayer.ui.volumeContainer,
+    })
+    
+    MusicPlayer.ui.volumeSlider = New('TextButton', {
+        Name = 'VolumeSlider',
+        Size = UDim2.new(1, -30, 0, 4),
+        Position = UDim2.new(0, 25, 0.5, -2),
+        BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+        BorderSizePixel = 0,
+        Text = '',
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.volumeContainer,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(1, 0) }),
+    })
+    
+    MusicPlayer.ui.volumeProgress = New('Frame', {
+        Name = 'VolumeProgress',
+        Size = UDim2.new(0.7, 0, 1, 0),
+        BackgroundColor3 = MusicPlayer.config.AccentColor1,
+        BorderSizePixel = 0,
+        Parent = MusicPlayer.ui.volumeSlider,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(1, 0) }),
+    })
+    
+    MusicPlayer.ui.volumeHandle = New('TextButton', {
+        Name = 'VolumeHandle',
+        Size = UDim2.new(0, 12, 0, 12),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.7, 0, 0.5, 0),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        Text = '',
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.volumeSlider,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(1, 0) }),
+        New('UIStroke', {
+            Color = MusicPlayer.config.AccentColor1,
+            Thickness = 2,
+        }),
+    })
+    
+    -- Create visualizer
+    MusicPlayer.ui.visualizerContainer = New('Frame', {
+        Name = 'Visualizer',
+        Size = UDim2.new(0, 280, 0, 50),
+        Position = UDim2.new(0.5, -140, 0, 335),
+        BackgroundTransparency = 1,
+        ClipsDescendants = true,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+    
+    -- Create visualizer bars
+    for i = 1, 40 do
+        local bar = New('Frame', {
+            Name = 'Bar' .. i,
+            Size = UDim2.new(0, 3, 0, 5),
+            Position = UDim2.new(0, (i - 1) * 7, 0.5, 0),
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = MusicPlayer.config.PrimaryTextColor,
+            BorderSizePixel = 0,
+            Parent = MusicPlayer.ui.visualizerContainer,
+        }, {
+            New('UICorner', { CornerRadius = UDim.new(0, 3) }),
+            New('UIGradient', {
+                Color = ColorSequence.new(
+                    MusicPlayer.config.AccentColor1,
+                    MusicPlayer.config.AccentColor2
+                ),
+                Rotation = 90,
+            }),
+        })
+        table.insert(MusicPlayer.ui.visualizerBars, bar)
+    end
+    
+    -- Create song info under volume bar
+    MusicPlayer.ui.songTitle = New('TextLabel', {
+        Name = 'SongTitle',
+        Size = UDim2.new(1, 0, 0, 30),
+        Position = UDim2.new(0, 0, 0, 380),
+        BackgroundTransparency = 1,
+        Font = MusicPlayer.config.BoldFont,
+        Text = 'Song Title',
+        TextColor3 = MusicPlayer.config.PrimaryTextColor,
+        TextSize = 24,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+
+    MusicPlayer.ui.artistName = New('TextLabel', {
+        Name = 'ArtistName',
+        Size = UDim2.new(1, 0, 0, 20),
+        Position = UDim2.new(0, 0, 0, 405),
+        BackgroundTransparency = 1,
+        Font = MusicPlayer.config.RegularFont,
+        Text = 'Artist Name',
+        TextColor3 = MusicPlayer.config.SecondaryTextColor,
+        TextSize = 16,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+    
+    -- Create control buttons
+    MusicPlayer.ui.shuffleBtn = New('TextButton', {
+        Name = 'Shuffle',
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(0.5, -120, 0, 310),
+        BackgroundTransparency = 1,
+        Text = '⇄',
+        Font = MusicPlayer.config.RegularFont,
+        TextColor3 = MusicPlayer.config.IconColor,
+        TextSize = 20,
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+
+    MusicPlayer.ui.prevBtn = New('TextButton', {
+        Name = 'Previous',
+        Size = UDim2.new(0, 35, 0, 35),
+        Position = UDim2.new(0.5, -75, 0, 308),
+        BackgroundTransparency = 1,
+        Text = '⏮',
+        Font = MusicPlayer.config.RegularFont,
+        TextColor3 = MusicPlayer.config.PrimaryTextColor,
+        TextSize = 22,
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+
+    MusicPlayer.ui.playPauseBtn = New('TextButton', {
+        Name = 'PlayPause',
+        Size = UDim2.new(0, 50, 0, 50),
+        Position = UDim2.new(0.5, -25, 0, 300),
+        BackgroundTransparency = 1,
+        Text = '▶',
+        Font = MusicPlayer.config.BoldFont,
+        TextColor3 = MusicPlayer.config.PrimaryTextColor,
+        TextSize = 24,
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(1, 0) }),
+        New('UIGradient', {
+            Color = ColorSequence.new(MusicPlayer.config.AccentColor1, MusicPlayer.config.AccentColor2),
+        }),
+        New('UIStroke', {
+            Color = Color3.fromRGB(255, 255, 255),
+            Transparency = 0.8,
+            Thickness = 2,
+        }),
+    })
+
+    MusicPlayer.ui.nextBtn = New('TextButton', {
+        Name = 'Next',
+        Size = UDim2.new(0, 35, 0, 35),
+        Position = UDim2.new(0.5, 40, 0, 308),
+        BackgroundTransparency = 1,
+        Text = '⏭',
+        Font = MusicPlayer.config.RegularFont,
+        TextColor3 = MusicPlayer.config.PrimaryTextColor,
+        TextSize = 22,
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+
+    MusicPlayer.ui.repeatBtn = New('TextButton', {
+        Name = 'Repeat',
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(0.5, 90, 0, 310),
+        BackgroundTransparency = 1,
+        Text = '🔄',
+        Font = MusicPlayer.config.RegularFont,
+        TextColor3 = MusicPlayer.config.IconColor,
+        TextSize = 18,
+        AutoButtonColor = false,
+        Parent = MusicPlayer.ui.nowPlayingPanel,
+    })
+    
+    -- Create window control buttons (minimize, maximize, close) in title bar
+    local minimizeBtn = New('TextButton', {
+        Name = 'MinimizeButton',
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(1, -105, 0, 5),
+        BackgroundColor3 = Color3.fromRGB(255, 193, 7),
+        BorderSizePixel = 0,
+        Text = '−',
+        TextColor3 = Color3.new(1, 1, 1),
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        Parent = MusicPlayer.ui.titleBar,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 15) }),
+    })
+
+    local maximizeBtn = New('TextButton', {
+        Name = 'MaximizeButton',
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(1, -70, 0, 5),
+        BackgroundColor3 = Color3.fromRGB(100, 150, 255),
+        BorderSizePixel = 0,
+        Text = '☆',
+        TextColor3 = Color3.new(1, 1, 1),
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        Parent = MusicPlayer.ui.titleBar,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 15) }),
+    })
+
+    local closeBtn = New('TextButton', {
+        Name = 'CloseButton',
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(1, -35, 0, 5),
+        BackgroundColor3 = Color3.fromRGB(255, 100, 100),
+        BorderSizePixel = 0,
+        Text = '×',
+        TextColor3 = Color3.new(1, 1, 1),
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        Parent = MusicPlayer.ui.titleBar,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 15) }),
+    })
+    
+    -- Create second song display above playlist
+    MusicPlayer.ui.songTitleAbove = New('TextLabel', {
+        Name = 'SongTitleAbove',
+        Size = UDim2.new(1, 0, 0, 30),
+        Position = UDim2.new(0, 20, 0, 40),
+        BackgroundTransparency = 1,
+        Font = MusicPlayer.config.BoldFont,
+        Text = 'Song Title',
+        TextColor3 = MusicPlayer.config.PrimaryTextColor,
+        TextSize = 22,
+        Parent = MusicPlayer.ui.playlistPanel,
+    })
+
+    MusicPlayer.ui.artistNameAbove = New('TextLabel', {
+        Name = 'ArtistNameAbove',
+        Size = UDim2.new(1, 0, 0, 20),
+        Position = UDim2.new(0, 20, 0, 65),
+        BackgroundTransparency = 1,
+        Font = MusicPlayer.config.RegularFont,
+        Text = 'Artist Name',
+        TextColor3 = MusicPlayer.config.SecondaryTextColor,
+        TextSize = 16,
+        Parent = MusicPlayer.ui.playlistPanel,
+    })
+
+    -- Create playlist
+    MusicPlayer.ui.playlistContainer = New('ScrollingFrame', {
+        Name = 'PlaylistContainer',
+        Size = UDim2.new(1, -40, 1, -160),
+        Position = UDim2.new(0, 20, 0, 100),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 6,
+        ScrollBarImageColor3 = MusicPlayer.config.AccentColor1,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        Parent = MusicPlayer.ui.playlistPanel,
+    }, {
+        New('UIListLayout', {
+            Padding = UDim.new(0, 10),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            FillDirection = Enum.FillDirection.Vertical,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            VerticalAlignment = Enum.VerticalAlignment.Top,
+        }),
+    })
+    
+    -- Create playlist items
+    for i, song in ipairs(MusicPlayer.playlist) do
+        local songItem = New('Frame', {
+            Name = song.title,
+            Size = UDim2.new(1, 0, 0, 50),
+            BackgroundTransparency = 1,
+            LayoutOrder = i,
+            Parent = MusicPlayer.ui.playlistContainer,
+        }, {
+            New('UICorner', { CornerRadius = UDim.new(0, 10) }),
+        })
+        table.insert(MusicPlayer.ui.songItemFrames, songItem)
+        
+        local playBtn = New('TextButton', {
+            Name = 'PlayButton',
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = '',
+        })
+        playBtn.Parent = songItem
+        playBtn.MouseButton1Click:Connect(function()
+            if i == MusicPlayer.state.currentSongIndex then
+                togglePlayPause()
+            else
+                playSong(i)
+            end
+        end)
+        
+        local playIcon = New('TextLabel', {
+            Name = 'PlayIcon',
+            Size = UDim2.new(0, 30, 0, 30),
+            Position = UDim2.new(0, 15, 0.5, -15),
+            BackgroundTransparency = 1,
+            Font = MusicPlayer.config.RegularFont,
+            Text = '▶',
+            TextColor3 = MusicPlayer.config.SecondaryTextColor,
+            TextSize = 20,
+            Parent = songItem,
+        })
+        
+        New('TextLabel', {
+            Size = UDim2.new(1, -120, 0, 20),
+            Position = UDim2.new(0, 55, 0, 7),
+            BackgroundTransparency = 1,
+            Font = MusicPlayer.config.RegularFont,
+            Text = song.title,
+            TextColor3 = MusicPlayer.config.PrimaryTextColor,
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = songItem,
+        })
+        
+        New('TextLabel', {
+            Size = UDim2.new(1, -120, 0, 16),
+            Position = UDim2.new(0, 55, 0, 25),
+            BackgroundTransparency = 1,
+            Font = MusicPlayer.config.RegularFont,
+            Text = song.artist,
+            TextColor3 = MusicPlayer.config.SecondaryTextColor,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = songItem,
+        })
+        
+        local durationLabel = New('TextLabel', {
+            Size = UDim2.new(0, 50, 0, 20),
+            Position = UDim2.new(1, -60, 0.5, -10),
+            BackgroundTransparency = 1,
+            Font = MusicPlayer.config.RegularFont,
+            Text = formatTime(song.duration),
+            TextColor3 = MusicPlayer.config.SecondaryTextColor,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Parent = songItem,
+        })
+        
+        MusicPlayer.ui.songDurationLabels[i] = durationLabel
+    end
+    
+    -- Create error label
+    MusicPlayer.ui.errorLabel = New('TextLabel', {
+        Name = 'ErrorLabel',
+        Size = UDim2.new(1, 0, 0, 24),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Text = '',
+        TextColor3 = Color3.fromRGB(255, 100, 100),
+        Font = MusicPlayer.config.BoldFont,
+        TextSize = 18,
+        ZIndex = 10,
+        Parent = MusicPlayer.ui.musicPlayer,
+    })
+    
+    -- Update canvas size
+    local listLayout = MusicPlayer.ui.playlistContainer:FindFirstChild('UIListLayout')
+    if listLayout then
+        task.wait(0.1)
+        local totalHeight = (#MusicPlayer.playlist * 60) + ((#MusicPlayer.playlist - 1) * 10)
+        MusicPlayer.ui.playlistContainer.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+    end
+    
+    -- Connect events
+    MusicPlayer.ui.playPauseBtn.MouseButton1Click:Connect(togglePlayPause)
+    MusicPlayer.ui.nextBtn.MouseButton1Click:Connect(nextSong)
+    MusicPlayer.ui.prevBtn.MouseButton1Click:Connect(prevSong)
+
+    -- Shuffle / Repeat toggles (restore behavior from standalone)
+    local function toggleShuffleBtn()
+        MusicPlayer.state.isShuffled = not MusicPlayer.state.isShuffled
+        local b = MusicPlayer.ui.shuffleBtn
+        if b then
+            b.TextColor3 = MusicPlayer.state.isShuffled and MusicPlayer.config.AccentColor1 or MusicPlayer.config.IconColor
+            b.Text = MusicPlayer.state.isShuffled and '🔀' or '⇄'
+            b.BackgroundTransparency = MusicPlayer.state.isShuffled and 0.7 or 1
+            pcall(function()
+                TweenService:Create(b, TweenInfo.new(0.1, Enum.EasingStyle.Back), {
+                    Size = UDim2.new(b.Size.X.Scale, b.Size.X.Offset + 3, b.Size.Y.Scale, b.Size.Y.Offset + 3)
+                }):Play()
+            end)
+            task.wait(0.1)
+            pcall(function()
+                TweenService:Create(b, TweenInfo.new(0.1, Enum.EasingStyle.Back), {
+                    Size = UDim2.new(b.Size.X.Scale, b.Size.X.Offset - 3, b.Size.Y.Scale, b.Size.Y.Offset - 3)
+                }):Play()
+            end)
+        end
+    end
+
+    local function toggleRepeatBtn()
+        local b = MusicPlayer.ui.repeatBtn
+        if not b then return end
+        if MusicPlayer.state.isRepeating == false then
+            MusicPlayer.state.isRepeating = 'all'
+            b.Text = '🔁'
+            b.TextColor3 = MusicPlayer.config.AccentColor1
+            b.BackgroundTransparency = 0.9
+        elseif MusicPlayer.state.isRepeating == 'all' then
+            MusicPlayer.state.isRepeating = true
+            b.Text = '🔂'
+            b.TextColor3 = MusicPlayer.config.AccentColor1
+            b.BackgroundTransparency = 0.9
+        else
+            MusicPlayer.state.isRepeating = false
+            b.Text = '🔄'
+            b.TextColor3 = MusicPlayer.config.IconColor
+            b.BackgroundTransparency = 1
+        end
+        pcall(function()
+            TweenService:Create(b, TweenInfo.new(0.1, Enum.EasingStyle.Back), {
+                Size = UDim2.new(b.Size.X.Scale, b.Size.X.Offset + 3, b.Size.Y.Scale, b.Size.Y.Offset + 3)
+            }):Play()
+        end)
+        task.wait(0.1)
+        pcall(function()
+            TweenService:Create(b, TweenInfo.new(0.1, Enum.EasingStyle.Back), {
+                Size = UDim2.new(b.Size.X.Scale, b.Size.X.Offset - 3, b.Size.Y.Scale, b.Size.Y.Offset - 3)
+            }):Play()
+        end)
+    end
+
+    if MusicPlayer.ui.shuffleBtn then
+        MusicPlayer.ui.shuffleBtn.MouseButton1Click:Connect(toggleShuffleBtn)
+    end
+    if MusicPlayer.ui.repeatBtn then
+        MusicPlayer.ui.repeatBtn.MouseButton1Click:Connect(toggleRepeatBtn)
+    end
+    
+    -- Progress bar dragging
+    MusicPlayer.ui.progressBarContainer.MouseButton1Down:Connect(function()
+        if not MusicPlayer.state.currentSound then return end
+
+        local connection
+        connection = UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement then
+                local mousePos = UserInputService:GetMouseLocation()
+                local progressBarPos = MusicPlayer.ui.progressBarContainer.AbsolutePosition
+                local progressBarSize = MusicPlayer.ui.progressBarContainer.AbsoluteSize
+
+                local relativeY = mousePos.Y - progressBarPos.Y
+                local progress = math.clamp(1 - (relativeY / progressBarSize.Y), 0, 1) -- Invert the progress calculation
+
+                if MusicPlayer.state.currentSound and MusicPlayer.state.currentSound.TimeLength > 0 then
+                    local newTime = progress * MusicPlayer.state.currentSound.TimeLength
+                    MusicPlayer.state.currentSound.TimePosition = newTime
+                    updateProgressBar(progress)
+                end
+            end
+        end)
+
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                connection:Disconnect()
+            end
+        end)
+    end)
+    
+    -- Volume slider dragging
+    local volumeDragging = false
+    MusicPlayer.ui.volumeSlider.MouseButton1Down:Connect(function()
+        volumeDragging = true
+        local connection
+        connection = UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement and volumeDragging then
+                local mousePos = UserInputService:GetMouseLocation()
+                local sliderPos = MusicPlayer.ui.volumeSlider.AbsolutePosition
+                local sliderSize = MusicPlayer.ui.volumeSlider.AbsoluteSize
+
+                local relativeX = mousePos.X - sliderPos.X
+                local volume = math.clamp(relativeX / sliderSize.X, 0, 1)
+
+                updateVolume(volume)
+            end
+        end)
+
+        local endConnection
+        endConnection = UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                volumeDragging = false
+                connection:Disconnect()
+                endConnection:Disconnect()
+            end
+        end)
+    end)
+
+    -- Also allow dragging on the volume handle
+    MusicPlayer.ui.volumeHandle.MouseButton1Down:Connect(function()
+        volumeDragging = true
+        local connection
+        connection = UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement and volumeDragging then
+                local mousePos = UserInputService:GetMouseLocation()
+                local sliderPos = MusicPlayer.ui.volumeSlider.AbsolutePosition
+                local sliderSize = MusicPlayer.ui.volumeSlider.AbsoluteSize
+
+                local relativeX = mousePos.X - sliderPos.X
+                local volume = math.clamp(relativeX / sliderSize.X, 0, 1)
+
+                updateVolume(volume)
+            end
+        end)
+
+        local endConnection
+        endConnection = UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                volumeDragging = false
+                connection:Disconnect()
+                endConnection:Disconnect()
+            end
+        end)
+    end)
+    
+    -- Window control button events
+    -- Minimize button functionality (follows same pattern as other windows)
+    local isMinimized = false
+    local originalSize = MusicPlayer.ui.musicPlayer.Size
+    local originalPosition = MusicPlayer.ui.musicPlayer.Position
+    local preMinimizeSize = MusicPlayer.ui.musicPlayer.Size
+    local preMinimizePosition = MusicPlayer.ui.musicPlayer.Position
+
+    minimizeBtn.MouseButton1Click:Connect(function()
+        if not isMinimized then
+            -- Minimize: show only title bar with animation
+            isMinimized = true
+
+            -- Store current size and position before minimizing
+            preMinimizeSize = MusicPlayer.ui.musicPlayer.Size
+            preMinimizePosition = MusicPlayer.ui.musicPlayer.Position
+
+            -- Slide minimize button to sit next to close button
+            TweenService:Create(minimizeBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0, 130, 0, 5)
+            }):Play()
+
+            -- Hide maximize button when minimized
+            maximizeBtn.Visible = false
+
+            -- Animate window shrinking smoothly
+            TweenService:Create(MusicPlayer.ui.musicPlayer, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, 200, 0, 40)
+            }):Play()
+            -- Also shrink the scale if needed
+            local scaleObj = MusicPlayer.ui.musicPlayer:FindFirstChild('UIScale')
+            if scaleObj then
+                TweenService:Create(scaleObj, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Scale = 1.0
+                }):Play()
+            end
+
+            -- Hide content with fade and visibility
+            TweenService:Create(MusicPlayer.ui.nowPlayingPanel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 1
+            }):Play()
+            TweenService:Create(MusicPlayer.ui.playlistPanel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 1
+            }):Play()
+
+            -- Hide all child elements too
+            for _, child in ipairs(MusicPlayer.ui.nowPlayingPanel:GetChildren()) do
+                if child:IsA('GuiObject') then
+                    child.Visible = false
+                end
+            end
+            for _, child in ipairs(MusicPlayer.ui.playlistPanel:GetChildren()) do
+                if child:IsA('GuiObject') then
+                    child.Visible = false
+                end
+            end
+
+            MusicPlayer.ui.nowPlayingPanel.Visible = false
+            MusicPlayer.ui.playlistPanel.Visible = false
+            minimizeBtn.Text = '+' -- Change to restore icon
+        else
+            -- Restore: show full window with animation
+            isMinimized = false
+
+            -- Slide minimize button back to its original position
+            TweenService:Create(minimizeBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(1, -105, 0, 5)
+            }):Play()
+
+            -- Show maximize button again when restored
+            maximizeBtn.Visible = true
+
+            -- Make content areas visible first
+            MusicPlayer.ui.nowPlayingPanel.Visible = true
+            MusicPlayer.ui.playlistPanel.Visible = true
+
+            -- Reset content area transparency
+            MusicPlayer.ui.nowPlayingPanel.BackgroundTransparency = 1
+            MusicPlayer.ui.playlistPanel.BackgroundTransparency = 1
+
+            -- Show all child elements
+            for _, child in ipairs(MusicPlayer.ui.nowPlayingPanel:GetChildren()) do
+                if child:IsA('GuiObject') and child.Name ~= 'UICorner' and child.Name ~= 'UIStroke' then
+                    child.Visible = true
+                end
+            end
+            for _, child in ipairs(MusicPlayer.ui.playlistPanel:GetChildren()) do
+                if child:IsA('GuiObject') and child.Name ~= 'UICorner' and child.Name ~= 'UIStroke' then
+                    child.Visible = true
+                end
+            end
+
+            -- Animate window expanding with bounce effect
+            TweenService:Create(MusicPlayer.ui.musicPlayer, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = preMinimizeSize
+            }):Play()
+            -- Restore the scale if needed
+            local scaleObj = MusicPlayer.ui.musicPlayer:FindFirstChild('UIScale')
+            if scaleObj then
+                local isMobile = UserInputService and UserInputService.TouchEnabled
+                local targetScale = windowSize or (isMobile and 0.55 or 1.0)
+                TweenService:Create(scaleObj, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Scale = targetScale
+                }):Play()
+            end
+
+            minimizeBtn.Text = '−' -- Change back to minimize icon
+        end
+    end)
+    
+    maximizeBtn.MouseButton1Click:Connect(function()
+        -- Maximize: toggle fullscreen with animation
+        if MusicPlayer.state.isMaximized then
+            -- Restore to normal size with animation
+            TweenService:Create(MusicPlayer.ui.musicPlayer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.InOut), {
+                Size = UDim2.new(0, 750, 0, 480),
+                Position = UDim2.new(0.5, -375, 0.5, -240)
+            }):Play()
+            MusicPlayer.state.isMaximized = false
+        else
+            -- Maximize to fullscreen with animation
+            TweenService:Create(MusicPlayer.ui.musicPlayer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.InOut), {
+                Size = UDim2.new(1, -20, 1, -20),
+                Position = UDim2.new(0, 10, 0, 10)
+            }):Play()
+            MusicPlayer.state.isMaximized = true
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        -- Use GenieCloseAnimation for consistent behavior with main windows
+        -- Find the music sidebar button for the animation target
+        local targetButton = nil
+        if sidebarApi and sidebarApi.navButtons and sidebarApi.navButtons['music'] then
+            targetButton = sidebarApi.navButtons['music'].button
+        end
+
+        Components.GenieCloseAnimation(MusicPlayer.ui.musicPlayer, targetButton)
+
+        -- Handle completion and state cleanup
+        task.wait(0.9) -- Wait for genie animation to complete
+        if MusicPlayer.ui and MusicPlayer.ui.mainGui then
+            MusicPlayer.ui.mainGui.Enabled = false
+        end
+        -- Clear openWindows entry and sidebar state
+        openWindows['music'] = nil
+        -- Mark as explicitly closed
+        musicPlayerClosed = true
+        if sidebarApi and sidebarApi.clearActiveTab then
+            sidebarApi.clearActiveTab('music')
+        end
+    end)
+    
+    -- Initialize
+    updateSongUI(1) -- Show first song by default
+    updateVolume(MusicPlayer.state.currentVolume)
+
+    -- Add to openWindows table for Alt key hide/show functionality
+    openWindows['music'] = MusicPlayer.ui.musicPlayer
+end
 
 -- =============================
 -- Toast Notification System
@@ -3906,12 +5895,6 @@ function setupUISync(refs)
         end
         if r.autoHitBtn then
             setButtonStateWithTheme(r.autoHitBtn, autoHitEnabled)
-        end
-        if r.autoCompleteEventBtn then
-            setButtonStateWithTheme(
-                r.autoCompleteEventBtn,
-                autoCompleteEventEnabled
-            )
         end
         if r.autoRebirthBtn then
             setButtonStateWithTheme(r.autoRebirthBtn, autoRebirthEnabled)
@@ -5465,97 +7448,44 @@ local CONFIG_INDEX = CONFIG_DIR .. '/index.json'
 
 -- Simple top-center toast for config feedback
 local _cfgToastGui
-function showTopCenterToast(message)
-    pcall(function()
-        if not _cfgToastGui or not _cfgToastGui.Parent then
-            _cfgToastGui = Instance.new('ScreenGui')
-            _cfgToastGui.Name = 'ConfigToastGui'
-            _cfgToastGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            _cfgToastGui.DisplayOrder = 1000000
-            _cfgToastGui.ResetOnSpawn = false
-            _cfgToastGui.Parent = CoreGui
-        end
+function showTopCenterToast(message, duration)
+    duration = duration or 5  -- Default to 5 seconds
+    -- ensure toastsGui exists
+    if not toastsGui or not toastsGui.Parent then
+        ensureToastsGui()
+    end
+    local toast = New('Frame', {
+        Parent = toastsGui,
+        Size = UDim2.new(0, 400, 0, 60),
+        Position = UDim2.new(0.5, -200, 0, 20),
+        BackgroundColor3 = Color3.fromRGB(25, 25, 30),
+        BackgroundTransparency = 0.1,
+        BorderSizePixel = 0,
+        ZIndex = 1000,
+    }, {
+        New('UICorner', { CornerRadius = UDim.new(0, 12) }),
+        New('UIStroke', { Color = Color3.fromRGB(100, 100, 255), Thickness = 2, Transparency = 0.3 }),
+    })
 
-        local holder = Instance.new('Frame')
-        holder.AnchorPoint = Vector2.new(0.5, 0)
-        holder.Position = UDim2.new(0.5, 0, 0, 8)
-        holder.Size = UDim2.new(0, 0, 0, 32)
-        holder.BackgroundColor3 = Card
-        holder.BackgroundTransparency = 0.05
-        holder.Parent = _cfgToastGui
-        holder.ZIndex = 1000001
-        Instance.new('UICorner', holder).CornerRadius = UDim.new(0, 16)
-        local stroke = Instance.new('UIStroke', holder)
-        stroke.Color = Stroke
-        stroke.Thickness = 1
-        stroke.Transparency = 0.25
+    local content = New('Frame', { Parent = toast, Size = UDim2.new(1, -20, 1, -10), Position = UDim2.new(0,10,0,5), BackgroundTransparency = 1, BorderSizePixel = 0 })
+    
+    -- Add megaphone emoji for announcements
+    local icon = New('TextLabel', { Parent = content, Size = UDim2.new(0, 32, 0, 32), Position = UDim2.new(0, 0, 0, 9), BackgroundTransparency = 1, Text = '📢', TextColor3 = Color3.fromRGB(100, 100, 255), TextSize = 20, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center })
+    
+    local messageLabel = New('TextLabel', { Parent = content, Size = UDim2.new(1, -40, 1, 0), Position = UDim2.new(0,40,0,0), BackgroundTransparency = 1, Text = tostring(message or ''), TextColor3 = Color3.new(1,1,1), TextSize = 16, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, TextWrapped = true })
 
-        local label = Instance.new('TextLabel')
-        label.BackgroundTransparency = 1
-        label.Font = Enum.Font.Gotham
-        label.TextSize = 14
-        label.TextColor3 = Text
-        label.Text = tostring(message or '')
-        label.Parent = holder
-        label.ZIndex = 1000002
-        label.Position = UDim2.new(0, 12, 0, 7)
-        label.Size = UDim2.new(1, -24, 1, -14)
-        label.TextXAlignment = Enum.TextXAlignment.Center
-        label.TextYAlignment = Enum.TextYAlignment.Center
+    -- animate in
+    toast.Size = UDim2.new(0,0,0,0)
+    toast.Position = UDim2.new(0.5,0,0,20)
+    local slideIn = TweenService:Create(toast, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.new(0,400,0,60), Position = UDim2.new(0.5,-200,0,20) })
+    slideIn:Play()
 
-        -- autosize width to content
-        local textSize = TextService:GetTextSize(
-            label.Text,
-            label.TextSize,
-            label.Font,
-            Vector2.new(1000, 32)
-        )
-        holder.Size = UDim2.new(0, math.max(180, textSize.X + 32), 0, 32)
-
-        -- fade in/out
-        holder.BackgroundTransparency = 0.9
-        label.TextTransparency = 1
-        TweenService
-            :Create(
-                holder,
-                TweenInfo.new(
-                    0.15,
-                    Enum.EasingStyle.Quad,
-                    Enum.EasingDirection.Out
-                ),
-                { BackgroundTransparency = 0.05 }
-            )
-            :Play()
-        local tin = TweenService:Create(
-            label,
-            TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            { TextTransparency = 0 }
-        )
-        tin:Play()
-        tin.Completed:Wait()
-        task.delay(1.2, function()
-            local tout1 = TweenService:Create(
-                label,
-                TweenInfo.new(
-                    0.18,
-                    Enum.EasingStyle.Quad,
-                    Enum.EasingDirection.Out
-                ),
-                { TextTransparency = 1 }
-            )
-            local tout2 = TweenService:Create(
-                holder,
-                TweenInfo.new(
-                    0.18,
-                    Enum.EasingStyle.Quad,
-                    Enum.EasingDirection.Out
-                ),
-                { BackgroundTransparency = 0.9 }
-            )
-            tout1:Play()
-            tout2:Play()
-            tout2.Completed:Wait()
-            holder:Destroy()
+    task.spawn(function()
+        task.wait(duration)
+        local slideOut = TweenService:Create(toast, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { Size = UDim2.new(0,0,0,0), Position = UDim2.new(0.5,0,0,20) })
+        slideOut:Play()
+        slideOut.Completed:Connect(function()
+            if toast and toast.Parent then toast:Destroy() end
         end)
     end)
 end
@@ -5712,7 +7642,7 @@ function buildConfigTable()
         seedTimerHitboxEnabled = seedTimerHitboxEnabled == true,
         autoHitEnabled = autoHitEnabled == true,
         autoHitSelectedRarities = selectedAutoHitRarities,
-        autoCompleteEventEnabled = autoCompleteEventEnabled == true,
+        autoCompleteInvasionEnabled = autoCompleteInvasionEnabled == true,
         autoRebirthEnabled = autoRebirthEnabled == true,
         antiAfkEnabled = antiAfkEnabled == true,
         keepSidebarOpen = keepSidebarOpen == true,
@@ -6158,33 +8088,14 @@ function applyConfigTable(cfg, uiRefs)
         end
     end
 
-    -- Auto Complete Event Settings
-    if type(cfg.autoCompleteEventEnabled) == 'boolean' then
-        autoCompleteEventEnabled = cfg.autoCompleteEventEnabled
-        if uiRefs and uiRefs.autoCompleteEventBtn then
-            setButtonStateWithTheme(
-                uiRefs.autoCompleteEventBtn,
-                autoCompleteEventEnabled
-            )
+    -- Auto Complete Invasion Settings
+    if type(cfg.autoCompleteInvasionEnabled) == 'boolean' then
+        autoCompleteInvasionEnabled = cfg.autoCompleteInvasionEnabled
+        if uiRefs and uiRefs.autoCompleteInvasionBtn then
+            setButtonStateWithTheme(uiRefs.autoCompleteInvasionBtn, autoCompleteInvasionEnabled)
         end
-        if autoCompleteEventEnabled then
-            autoCompleteEventThread = task.spawn(function()
-                while autoCompleteEventEnabled and not unloaded do
-                    if autoCompleteEventEnabled then
-                        autoCompleteEventLoop()
-                    end
-                    task.wait(0.1)
-                end
-            end)
-        else
-            if autoCompleteEventThread then
-                task.cancel(autoCompleteEventThread)
-                autoCompleteEventThread = nil
-            end
-            if autoRebirthThread then
-                task.cancel(autoRebirthThread)
-                autoRebirthThread = nil
-            end
+        if autoCompleteInvasionEnabled then
+            toggleAutoCompleteInvasion(true)
         end
     end
 
@@ -6594,11 +8505,17 @@ autoHitBatNames = {
 -- =============================
 -- Auto Complete Event Variables
 -- =============================
-autoCompleteEventEnabled = false
-autoCompleteEventThread = nil
 replayMonitorThread = nil
 eventRewardsPart = nil
 eventDisplay = nil
+
+-- Auto Complete Invasion variables
+autoCompleteInvasionEnabled = false
+autoCompleteInvasionThread = nil
+previousTimerText = nil -- Track previous timer state for debugging
+
+-- Music Player variables
+musicPlayerClosed = false -- Track if music player was explicitly closed
 
 -- Auto Rebirth variables
 autoRebirthEnabled = false
@@ -9158,621 +11075,6 @@ function toggleAutoHit(on)
         autoHitThread = task.spawn(autoHitLoop)
     end
 end
-
--- =============================
--- Auto Complete Event Functions
--- =============================
-function getEventRewardsPart()
-    local scriptedMap = game:GetService('Workspace').ScriptedMap
-    if scriptedMap then
-        local event = scriptedMap:FindFirstChild('Event')
-        if event then
-            local eventRewards = event:FindFirstChild('EventRewards')
-            if eventRewards then
-                return eventRewards:FindFirstChild('TalkPart')
-            end
-        end
-    end
-    return nil
-end
-
-function getEventDisplay()
-    local scriptedMap = game:GetService('Workspace').ScriptedMap
-    if scriptedMap then
-        local event = scriptedMap:FindFirstChild('Event')
-        if event then
-            local tomadeFloor = event:FindFirstChild('TomadeFloor')
-            if tomadeFloor then
-                local guiAttachment =
-                    tomadeFloor:FindFirstChild('GuiAttachment')
-                if guiAttachment then
-                    local billboard = guiAttachment:FindFirstChild('Billboard')
-                    if billboard then
-                        return billboard:FindFirstChild('Display')
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
-function checkEventDisplayText()
-    local display = getEventDisplay()
-    if display and display:IsA('TextLabel') then
-        return display.Text
-    end
-    return nil
-end
-
-function activateProximityPrompt()
-    local talkPart = getEventRewardsPart()
-    if talkPart then
-        local proximityPrompt =
-            talkPart:FindFirstChildOfClass('ProximityPrompt')
-        if proximityPrompt and proximityPrompt.Enabled then
-            -- Try multiple methods to activate the proximity prompt
-            local success = false
-
-            -- Method 1: Try triggering the proximity prompt directly
-            pcall(function()
-                proximityPrompt.Triggered:Fire()
-                success = true
-            end)
-
-            -- Method 2: If that doesn't work, try InputHoldBegin/End
-            if not success then
-                pcall(function()
-                    proximityPrompt:InputHoldBegin()
-                    task.wait(0.1)
-                    proximityPrompt:InputHoldEnd()
-                    success = true
-                end)
-            end
-
-            return success
-        end
-    end
-    return false
-end
-
-function isProximityPromptReady()
-    local talkPart = getEventRewardsPart()
-    if talkPart then
-        local proximityPrompt =
-            talkPart:FindFirstChildOfClass('ProximityPrompt')
-        if proximityPrompt and proximityPrompt.Enabled then
-            return true
-        end
-    end
-    return false
-end
-
-function teleportToTomade()
-    local scriptedMap = game:GetService('Workspace').ScriptedMap
-    if scriptedMap then
-        local event = scriptedMap:FindFirstChild('Event')
-        if event then
-            local tomadeFloor = event:FindFirstChild('TomadeFloor')
-            if tomadeFloor then
-                local player = game.Players.LocalPlayer
-                if
-                    player.Character
-                    and player.Character:FindFirstChild('HumanoidRootPart')
-                then
-                    player.Character.HumanoidRootPart.CFrame = tomadeFloor.CFrame
-                        + Vector3.new(0, 5, 0)
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
--- Function to check if brainrot exists in the VisualFolder
-function hasBrainrotInVisualFolder()
-    local scriptedMap = game:GetService('Workspace').ScriptedMap
-    if scriptedMap then
-        local event = scriptedMap:FindFirstChild('Event')
-        if event then
-            local hitListVisualizer = event:FindFirstChild('HitListVisualizer')
-            if hitListVisualizer then
-                local visualFolder =
-                    hitListVisualizer:FindFirstChild('VisualFolder')
-                if visualFolder then
-                    -- Check if there are any children (brainrot models) in the VisualFolder
-                    local children = visualFolder:GetChildren()
-                    return #children > 0
-                end
-            end
-        end
-    end
-    return false
-end
-
--- Function to wait for brainrot or talk to guy if none appears
-function waitForBrainrotOrTalk()
-    local waitTime = 0
-    local maxWaitTime = 5 -- 5 seconds
-
-    while waitTime < maxWaitTime do
-        if hasBrainrotInVisualFolder() then
-            print('Brainrot found in VisualFolder - proceeding normally')
-            return true
-        end
-
-        task.wait(0.1)
-        waitTime = waitTime + 0.1
-    end
-
-    -- No brainrot appeared, need to talk to the guy
-    print('No brainrot found after 5 seconds - talking to guy')
-    if teleportToTomade() then
-        task.wait(1) -- Wait longer for teleport to complete
-
-        -- Try to activate the proximity prompt with more attempts and longer waits
-        local attempts = 0
-        local maxAttempts = 20 -- Try for up to 2 seconds
-        local talked = false
-
-        while attempts < maxAttempts and not talked do
-            if activateProximityPrompt() then
-                print('Successfully talked to guy')
-                talked = true
-                break
-            end
-            task.wait(0.1)
-            attempts = attempts + 1
-        end
-
-        if not talked then
-            print('Failed to talk to guy after ' .. maxAttempts .. ' attempts')
-        end
-
-        -- Wait longer for brainrot to appear after talking
-        task.wait(2)
-    else
-        print('Failed to teleport to Tomade')
-    end
-
-    return hasBrainrotInVisualFolder()
-end
-
-function autoCompleteEventLoop()
-    local lastText = ''
-    local hasClaimed = false
-    while autoCompleteEventEnabled and not unloaded do
-        local displayText = checkEventDisplayText()
-        if displayText and displayText ~= '' then
-            -- Check if text is "Claim" (either on transition or already there)
-            if
-                displayText == 'Claim'
-                and (
-                    lastText == 'Tomade Torelli'
-                    or lastText == ''
-                    or not hasClaimed
-                )
-            then
-                -- First, check if we have brainrot or need to talk to the guy
-                if not hasBrainrotInVisualFolder() then
-                    print('No brainrot found - talking to guy first')
-                    -- Talk to the guy first, then continue with claim loop
-                    waitForBrainrotOrTalk()
-                    -- After talking, continue to the claim process below
-                else
-                end
-
-                -- Now do the claim process (either after talking to guy or if brainrot already exists)
-                if teleportToTomade() then
-                    task.wait(0.5) -- Brief wait for teleport
-
-                    -- Continuously try to activate the proximity prompt until claim text changes
-                    while displayText == 'Claim' do
-                        -- Try to activate the proximity prompt regardless of ready state
-                        if activateProximityPrompt() then
-                            hasClaimed = true
-                        end
-                        task.wait(0.1) -- Check every 100ms
-                        -- Re-check the text in case it changed
-                        displayText = checkEventDisplayText()
-                        if displayText and displayText ~= 'Claim' then
-                            break
-                        end
-                    end
-
-                    task.wait(1) -- Wait after claiming to avoid spam
-
-                    -- Try to click replay button immediately after claim process
-                    pcall(attemptReplayClick)
-                end
-            end
-
-            -- Reset hasClaimed flag when text changes away from "Claim"
-            if displayText ~= 'Claim' then
-                hasClaimed = false
-            end
-
-            lastText = displayText
-        end
-
-        -- Check more frequently for instant response
-        task.wait(0.1) -- Check every 100ms for instant detection
-    end
-end
-
--- =============================
--- Auto Replay Button Functions
--- =============================
-
-local function findReplayTextLabel(timeout)
-    timeout = timeout or 2
-    local t0 = time()
-    while time() - t0 < timeout do
-        if unloaded then
-            return nil
-        end
-
-        local ok, textLabel = pcall(function()
-            local Players = game:GetService('Players')
-            local lp = Players.LocalPlayer
-            if not lp or not lp.PlayerGui then
-                return nil
-            end
-            local pg = lp.PlayerGui
-
-            local sg = pg:FindFirstChild('SurfaceGui')
-            if not (sg and sg.Enabled) then
-                return nil
-            end
-
-            local rf = sg:FindFirstChild('ReplayFrame')
-            local r = rf and rf:FindFirstChild('Replay')
-            local tl = r and r:FindFirstChild('TextLabel')
-
-            if tl and tl:IsA('TextLabel') and tl.Visible then
-                -- verify visible ancestors
-                local p = tl.Parent
-                while p and p ~= pg do
-                    if p:IsA('GuiObject') and p.Visible == false then
-                        return nil
-                    end
-                    p = p.Parent
-                end
-                return tl
-            end
-            return nil
-        end)
-
-        if ok and textLabel then
-            return textLabel
-        end
-        task.wait(0.05)
-    end
-    return nil
-end
-
-local function findReplayButton(timeout)
-    timeout = timeout or 2
-    local t0 = time()
-    while time() - t0 < timeout do
-        if unloaded then
-            return nil
-        end
-
-        local ok, btn = pcall(function()
-            local Players = game:GetService('Players')
-            local lp = Players.LocalPlayer
-            if not lp or not lp.PlayerGui then
-                return nil
-            end
-            local pg = lp.PlayerGui
-
-            local sg = pg:FindFirstChild('SurfaceGui')
-            if not (sg and sg.Enabled) then
-                return nil
-            end
-
-            local rf = sg:FindFirstChild('ReplayFrame')
-            local r = rf and rf:FindFirstChild('Replay')
-            -- Handle TextButton or ImageButton
-            local tb = r
-                and (
-                    r:FindFirstChild('TextButton')
-                    or r:FindFirstChildWhichIsA('GuiButton')
-                )
-            if
-                tb
-                and (tb:IsA('TextButton') or tb:IsA('ImageButton'))
-                and tb.Visible
-                and tb.Active
-            then
-                -- verify visible ancestors
-                local p = tb.Parent
-                while p and p ~= pg do
-                    if p:IsA('GuiObject') and p.Visible == false then
-                        return nil
-                    end
-                    p = p.Parent
-                end
-                return tb
-            end
-            return nil
-        end)
-
-        if ok and btn then
-            return btn
-        end
-        task.wait(0.05)
-    end
-    return nil
-end
--- Low-level: virtual click using getconnections hook method
-local function virtualClickGui(btn, dx, dy)
-    if not btn or not btn.Parent then
-        return false
-    end
-
-    -- Try getconnections hook first
-    if getconnections then
-        local triggered = false
-        for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do
-            pcall(function()
-                conn.Function()
-                triggered = true
-            end)
-        end
-        for _, conn in ipairs(getconnections(btn.Activated)) do
-            pcall(function()
-                conn.Function()
-                triggered = true
-            end)
-        end
-        if triggered then
-            return true
-        end
-    end
-
-    -- Fallback: Activate()
-    local okActivate = pcall(function()
-        if btn.Activate then
-            btn:Activate()
-        end
-    end)
-    if okActivate then
-        return true
-    end
-
-    -- Fallback: Fire MouseButton1Click
-    local okClick = pcall(function()
-        if btn.MouseButton1Click then
-            btn.MouseButton1Click:Fire()
-        end
-    end)
-    if okClick then
-        return true
-    end
-
-    -- Fallback: Fire Activated
-    local okActivated = pcall(function()
-        if btn.Activated then
-            btn.Activated:Fire()
-        end
-    end)
-    if okActivated then
-        return true
-    end
-
-    -- Final fallback: VirtualInputManager
-    local ok, VIM = pcall(game.GetService, game, 'VirtualInputManager')
-    if not ok or not VIM then
-        return false
-    end
-
-    local camera = workspace.CurrentCamera
-    local surfaceGui = btn:FindFirstAncestorWhichIsA('SurfaceGui')
-    if not surfaceGui or not surfaceGui.Adornee then
-        return false
-    end
-
-    local adornee = surfaceGui.Adornee
-    local canvasSize = surfaceGui.CanvasSize
-    local buttonPos = btn.AbsolutePosition
-    local buttonSize = btn.AbsoluteSize
-
-    local normalizedX = buttonPos.X / canvasSize.X
-    local normalizedY = buttonPos.Y / canvasSize.Y
-
-    local adorneeSize = adornee.Size
-    local offsetX = (normalizedX - 0.5) * adorneeSize.X
-    local offsetY = (normalizedY - 0.5) * adorneeSize.Y
-
-    local worldPos = adornee.CFrame * CFrame.new(offsetX, offsetY, 0)
-    local screenPos, onScreen = camera:WorldToViewportPoint(worldPos.Position)
-
-    if onScreen then
-        VIM:SendMouseButtonEvent(screenPos.X, screenPos.Y, true, true, game, 0)
-        VIM:SendMouseButtonEvent(screenPos.X, screenPos.Y, true, false, game, 0)
-        return true
-    else
-        return false
-    end
-end
--- Simple replay button click attempt every 1 second
-local lastReplayAttempt = 0
-local replayAttemptInterval = 1.0 -- Try every 1 second
-local function attemptReplayClick()
-    if unloaded then
-        return false
-    end
-
-    local now = time()
-    if now - lastReplayAttempt < replayAttemptInterval then
-        return false
-    end
-
-    lastReplayAttempt = now
-
-    local btn = findReplayButton(0.5) -- Quick lookup
-    if not btn then
-        return false
-    end
-
-    -- Try to click the button using getconnections hook
-    return virtualClickGui(btn)
-end
-
--- Public function to manually check button coordinates (call this anytime)
-function debugReplayButtonCoords()
-    printButtonCoordinates()
-end
-
--- Function to test different coordinate offsets and find what works
-function testReplayButtonClick()
-    local btn = findReplayButton(1)
-    if not btn then
-        print('TEST: Button not found')
-        return
-    end
-
-    local pos = btn.AbsolutePosition
-    local size = btn.AbsoluteSize
-    local centerX = pos.X + math.floor(size.X / 2)
-    local centerY = pos.Y + math.floor(size.Y / 2)
-
-    print('=== TESTING DIFFERENT COORDINATES ===')
-    print('Button center: (' .. centerX .. ', ' .. centerY .. ')')
-
-    -- Test different coordinate variations
-    local testCoords = {
-        { centerX, centerY, 'Center' },
-        { pos.X, pos.Y, 'Top-left' },
-        { pos.X + size.X, pos.Y, 'Top-right' },
-        { pos.X, pos.Y + size.Y, 'Bottom-left' },
-        { pos.X + size.X, pos.Y + size.Y, 'Bottom-right' },
-        { centerX, pos.Y, 'Top-center' },
-        { centerX, pos.Y + size.Y, 'Bottom-center' },
-        { pos.X, centerY, 'Left-center' },
-        { pos.X + size.X, centerY, 'Right-center' },
-        { centerX - 10, centerY, 'Center-left-10' },
-        { centerX + 10, centerY, 'Center-right+10' },
-        { centerX, centerY - 10, 'Center-up-10' },
-        { centerX, centerY + 10, 'Center-down+10' },
-    }
-
-    for i, coord in ipairs(testCoords) do
-        print(
-            'Test '
-                .. i
-                .. ': '
-                .. coord[3]
-                .. ' = ('
-                .. coord[1]
-                .. ', '
-                .. coord[2]
-                .. ')'
-        )
-        -- You can manually test these coordinates
-    end
-
-    print('Try clicking manually at these coordinates to see which one works!')
-    print('=============================================')
-end
--- Public wrapper: retries + cooldown + unload guard
-local lastReplayClickAt = 0
-function safeClickReplayButton()
-    if unloaded then
-        return false
-    end
-    if time() - lastReplayClickAt < 0.8 then
-        return false
-    end
-
-    local btn = findReplayButton(2)
-    if not btn then
-        return false
-    end
-
-    for attempt = 1, 3 do
-        if unloaded then
-            return false
-        end
-        local ok = virtualClickGui(btn)
-        if ok then
-            lastReplayClickAt = time()
-            return true
-        end
-        task.wait(0.2)
-    end
-    return false
-end
-
-function toggleAutoCompleteEvent(on)
-    autoCompleteEventEnabled = (on == true)
-
-    -- Cancel any running threads
-    if autoCompleteEventThread then
-        task.cancel(autoCompleteEventThread)
-        autoCompleteEventThread = nil
-    end
-    if replayMonitorThread then
-        task.cancel(replayMonitorThread)
-        replayMonitorThread = nil
-    end
-
-    if autoCompleteEventEnabled then
-        -- Show toast and update UI instantly
-        showInternalToast(
-            'Auto Complete Event',
-            'Auto Complete Event enabled',
-            Success
-        )
-
-        -- Do heavy initialization in background
-        task.spawn(function()
-            -- Initialize event parts
-            eventRewardsPart = getEventRewardsPart()
-            eventDisplay = getEventDisplay()
-
-            if eventRewardsPart and eventDisplay then
-                -- Initial check: if no brainrot exists, talk to the guy first
-                if not hasBrainrotInVisualFolder() then
-                    print(
-                        'Initial check: No brainrot found - talking to guy first'
-                    )
-                    waitForBrainrotOrTalk()
-                else
-                    print(
-                    )
-                end
-
-                autoCompleteEventThread = task.spawn(autoCompleteEventLoop)
-
-                -- Start independent replay monitoring thread
-                replayMonitorThread = task.spawn(function()
-                    while autoCompleteEventEnabled and not unloaded do
-                        pcall(attemptReplayClick)
-                        task.wait(1) -- Wait 1 second between attempts
-                    end
-                end)
-            else
-                autoCompleteEventEnabled = false
-                showInternalToast(
-                    'Auto Complete Event',
-                    'Event parts not found',
-                    Error
-                )
-            end
-        end)
-    else
-        showInternalToast(
-            'Auto Complete Event',
-            'Auto Complete Event disabled',
-            Muted
-        )
-    end
-end
-
 -- =============================
 -- Auto Rebirth Functions
 -- =============================
@@ -10066,6 +11368,148 @@ function toggleAutoRebirth(on)
         )
     else
         showInternalToast('Auto Rebirth', 'Auto Rebirth disabled', Muted)
+    end
+end
+
+-- Auto Complete Invasion Functions
+function autoCompleteInvasionLoop()
+    while autoCompleteInvasionEnabled and not unloaded do
+        -- Monitor the invasion timer and battle button
+        local player = game:GetService("Players").LocalPlayer
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if not playerGui then
+            task.wait(0.1)
+        else
+            local mainGui = playerGui:FindFirstChild("Main")
+            if not mainGui then
+                task.wait(0.1)
+            else
+                local brainrotInvasion = mainGui:FindFirstChild("Brainrot_Invasion")
+                if not brainrotInvasion then
+                    task.wait(0.1)
+                else
+                    -- Check timer
+                    local timer = brainrotInvasion:FindFirstChild("Timer")
+                    local timerReady = false
+                    if timer then
+                        local timeLabel = timer:FindFirstChild("Time")
+                        if timeLabel and timeLabel:IsA("TextLabel") then
+                            local timeText = timeLabel.Text
+                            -- Check if timer is at 0:00 and we haven't triggered for this 0:00 period yet
+                            if (timeText == "0:00" or timeText == "00:00") and
+                               (previousTimerText ~= "0:00" and previousTimerText ~= "00:00") then
+                                timerReady = true
+                            end
+                            previousTimerText = timeText
+                        end
+                    end
+
+                    -- Check battle button
+                    local battleButtonReady = false
+                    local buttonList = brainrotInvasion:FindFirstChild("Button_List")
+                    if buttonList then
+                        local battleButton = buttonList:FindFirstChild("Battle_Button")
+                        if battleButton then
+                            local mainObj = battleButton:FindFirstChild("Main")
+                            if mainObj then
+                                local textLabel = mainObj:FindFirstChild("Text")
+                                if textLabel and textLabel:IsA("TextLabel") and textLabel.Text == "Battle!" then
+                                    battleButtonReady = true
+                                end
+                            end
+                        end
+                    end
+
+                    -- Trigger invasion if both conditions are met
+                    if timerReady and battleButtonReady then
+                        task.wait(1)
+                        pcall(function()
+                            game:GetService("ReplicatedStorage").Remotes.MissionServicesRemotes.RequestStartInvasion:FireServer()
+                        end)
+                    end
+                    task.wait(0.1) -- Check every 0.1 seconds
+                end
+            end
+        end
+    end
+end
+
+-- Function to toggle auto complete invasion
+function toggleAutoCompleteInvasion(on)
+    autoCompleteInvasionEnabled = (on == true)
+
+    -- Cancel any running thread
+    if autoCompleteInvasionThread then
+        task.cancel(autoCompleteInvasionThread)
+        autoCompleteInvasionThread = nil
+    end
+
+    if autoCompleteInvasionEnabled then
+        -- Reset timer tracking when enabling
+        previousTimerText = nil
+
+        -- Check current state immediately in case both conditions are already met
+        local shouldTriggerNow = false
+        pcall(function()
+            local player = game:GetService("Players").LocalPlayer
+            local playerGui = player:FindFirstChild("PlayerGui")
+            if playerGui then
+                local mainGui = playerGui:FindFirstChild("Main")
+                if mainGui then
+                    local brainrotInvasion = mainGui:FindFirstChild("Brainrot_Invasion")
+                    if brainrotInvasion then
+                        -- Check timer
+                        local timer = brainrotInvasion:FindFirstChild("Timer")
+                        local timerAtZero = false
+                        if timer then
+                            local timeLabel = timer:FindFirstChild("Time")
+                            if timeLabel and timeLabel:IsA("TextLabel") and (timeLabel.Text == "0:00" or timeLabel.Text == "00:00") then
+                                timerAtZero = true
+                            end
+                        end
+
+                        -- Check battle button
+                        local battleReady = false
+                        local buttonList = brainrotInvasion:FindFirstChild("Button_List")
+                        if buttonList then
+                            local battleButton = buttonList:FindFirstChild("Battle_Button")
+                            if battleButton then
+                                local mainObj = battleButton:FindFirstChild("Main")
+                                if mainObj then
+                                    local textLabel = mainObj:FindFirstChild("Text")
+                                    if textLabel and textLabel:IsA("TextLabel") and textLabel.Text == "Battle!" then
+                                        battleReady = true
+                                    end
+                                end
+                            end
+                        end
+
+                        if timerAtZero and battleReady then
+                            shouldTriggerNow = true
+                        end
+                    end
+                end
+            end
+        end)
+
+        if shouldTriggerNow then
+            task.spawn(function()
+                task.wait(1)
+                pcall(function()
+                    game:GetService("ReplicatedStorage").Remotes.MissionServicesRemotes.RequestStartInvasion:FireServer()
+                end)
+            end)
+        end
+
+        autoCompleteInvasionThread = task.spawn(autoCompleteInvasionLoop)
+        showInternalToast(
+            'Auto Complete Invasion',
+            'Monitoring invasion timer and battle button...',
+            Success
+        )
+    else
+        previousTimerText = nil
+        showInternalToast('Auto Complete Invasion', 'Auto Complete Invasion disabled', Muted)
     end
 end
 
@@ -12647,6 +14091,10 @@ function Components.GenieCloseAnimation(panel, targetButton)
         panel.BackgroundColor3 = Card
     end
 
+    -- Enable clipping during animation to prevent content from showing through
+    local originalClipsDescendants = panel.ClipsDescendants
+    panel.ClipsDescendants = true
+
     -- Get the target button position for the "sucking" effect
     local targetPos = targetButton and targetButton.AbsolutePosition
         or Vector2.new(400, 350)
@@ -12685,13 +14133,12 @@ function Components.GenieCloseAnimation(panel, targetButton)
             }
         ),
 
-        -- Third: Final scale to nothing and fade out
+        -- Third: Final scale to nothing (keep background opaque to prevent content showing through)
         FX.CreateTween(
             panel,
             TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
             {
                 Size = UDim2.new(0, 0, 0, 0),
-                BackgroundTransparency = 1,
             }
         ),
     }
@@ -12715,8 +14162,8 @@ function Components.GenieCloseAnimation(panel, targetButton)
             genieSequence[3]:Play()
             genieSequence[3].Completed:Connect(function()
                 panel.Visible = false
-                -- Reset for next time
-                panel.BackgroundTransparency = 0.1
+                -- Reset for next time (keep background opaque, just reset other properties)
+                panel.ClipsDescendants = originalClipsDescendants
                 if panel:FindFirstChild('contentArea') then
                     panel.contentArea.BackgroundTransparency = 0
                 end
@@ -12949,10 +14396,10 @@ function Components.ModernSidebar(props)
 
     -- Main sidebar container - Compact design
     local initialWidth = isExpanded and sidebarWidth.expanded or sidebarWidth.collapsed
-    -- Increased height to cover Discord (380) and Unload (430) buttons + margins
-    -- Unload button: Position Y=430, Height=40, so bottom edge is at Y=470
-    -- Sidebar height: 470 + 10px margin = 480px
-    local initialHeight = isMobile and 480 or (Workspace.CurrentCamera and math.min(490, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 490
+    -- Increased height to cover Discord (435) and Unload (485) buttons + margins
+    -- Unload button: Position Y=485, Height=40, so bottom edge is at Y=525
+    -- Sidebar height: 525 + 10px margin = 535px
+    local initialHeight = isMobile and 535 or (Workspace.CurrentCamera and math.min(545, Workspace.CurrentCamera.ViewportSize.Y - 20)) or 545
     local sidebar = New('Frame', {
         Size = UDim2.new(0, initialWidth, 0, initialHeight), -- Height fits viewport on small screens
         Position = (sidebarLocation == 'Right') and UDim2.new(1, -initialWidth - 10, 0, 10)
@@ -13034,7 +14481,7 @@ function Components.ModernSidebar(props)
 
     -- Navigation items container
     local navContainer = New('Frame', {
-        Size = UDim2.new(1, 0, 0, 240), -- Increased height for 4 navigation items
+        Size = UDim2.new(1, 0, 0, 325), -- Increased height for 5 navigation items (5*60 + 4*5 spacing = 320 + 5 margin)
         Position = UDim2.new(0, 0, 0, 95),
         BackgroundTransparency = 1,
         Parent = sidebar,
@@ -13045,6 +14492,7 @@ function Components.ModernSidebar(props)
         { id = 'main', icon = '⚡', label = 'Main', callback = nil },
         { id = 'alerts', icon = '🔔', label = 'Alerts', callback = nil },
         { id = 'misc', icon = '🔧', label = 'Misc', callback = nil },
+        { id = 'music', icon = '🎵', label = 'Music', callback = nil },
         {
             id = 'settings',
             icon = '⚙️',
@@ -13056,7 +14504,7 @@ function Components.ModernSidebar(props)
     -- Add Discord button above unload button
     local discordBtn = New('TextButton', {
         Size = UDim2.new(1, -20, 0, 40),
-        Position = UDim2.new(0, 10, 0, 380), -- Moved down to accommodate new nav items
+        Position = UDim2.new(0, 10, 0, 435), -- Moved down to avoid overlapping with settings button
         BackgroundColor3 = Color3.fromRGB(88, 101, 242), -- Discord brand color
         BorderSizePixel = 0,
         Text = '',
@@ -13162,7 +14610,7 @@ function Components.ModernSidebar(props)
     -- Add unload button at bottom
     local unloadBtn = New('TextButton', {
         Size = UDim2.new(1, -20, 0, 40), -- Clean size
-        Position = UDim2.new(0, 10, 0, 430), -- Positioned under Discord button (380 + 40 + 10 gap)
+        Position = UDim2.new(0, 10, 0, 485), -- Positioned under Discord button (435 + 40 + 10 gap)
         BackgroundColor3 = Danger,
         BorderSizePixel = 0,
         Text = '',
@@ -13437,9 +14885,9 @@ function Components.ModernSidebar(props)
         -- Calculate actual sidebar width with scale
         local actualSidebarWidth = targetWidth * (sidebar:FindFirstChild('UIScale') and sidebar:FindFirstChild('UIScale').Scale or 1)
 
-        -- Compact sidebar dimensions
+        -- Compact sidebar dimensions (same calculation as initial height)
         local isMobile = UserInputService and UserInputService.TouchEnabled
-        local targetHeight = isSmallViewport() and (isMobile and 480 or math.min(490, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 490)) or 490
+        local targetHeight = isSmallViewport() and (isMobile and 535 or math.min(545, Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize.Y - 20 or 545)) or 545
         local targetSize = UDim2.new(0, targetWidth, 0, targetHeight)
         local currentLocation = sidebar:GetAttribute('SidebarLocation')
             or sidebarLocation
@@ -14299,7 +15747,7 @@ function Components.ModernSidebar(props)
                 or UDim2.new(0, 10, 0, 10)
             sidebar.Position = targetPos
             local isMobile = UserInputService and UserInputService.TouchEnabled
-            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 480 or 490)
+            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 535 or 545)
             brandText.Visible = false
             unloadLabel.Visible = false
             navContainer.Visible = true
@@ -14329,7 +15777,7 @@ function Components.ModernSidebar(props)
                 end
 
                 local isMobile = UserInputService and UserInputService.TouchEnabled
-            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 480 or 490)
+            sidebar.Size = UDim2.new(0, sidebarWidth.collapsed, 0, isMobile and 535 or 545)
                 isExpanded = false
                 -- Ensure all elements are visible when off-screen
                 navContainer.Visible = true
@@ -15882,46 +17330,43 @@ function Components.buildMainPage(parent)
         }
     )
 
-    -- Auto Complete Event section
-    local row4 = makeRow(490)
-    refs.autoCompleteEventBtn = Components.PillButton({
-        Parent = row4,
+    -- Auto Complete Invasion section
+    local row5d = makeRow(480)
+    refs.autoCompleteInvasionBtn = Components.PillButton({
+        Parent = row5d,
         Size = UDim2.new(0, 28, 0, 28),
         ZIndex = 3,
         LayoutOrder = 1,
     })
-    bind(refs.autoCompleteEventBtn.MouseButton1Click:Connect(function()
-        autoCompleteEventEnabled = not autoCompleteEventEnabled
-        -- Update button state instantly
+    bind(refs.autoCompleteInvasionBtn.MouseButton1Click:Connect(function()
+        autoCompleteInvasionEnabled = not autoCompleteInvasionEnabled
+        toggleAutoCompleteInvasion(autoCompleteInvasionEnabled)
         Components.SetState(
-            refs.autoCompleteEventBtn,
-            autoCompleteEventEnabled and 'on' or 'off',
-            autoCompleteEventEnabled and Success or DefaultButton
+            refs.autoCompleteInvasionBtn,
+            autoCompleteInvasionEnabled and 'on' or 'off',
+            autoCompleteInvasionEnabled and Success or DefaultButton
         )
-        -- Then do heavy work in background
-        toggleAutoCompleteEvent(autoCompleteEventEnabled)
     end))
     New(
         'TextLabel',
         {
-            Parent = row4,
+            Parent = row5d,
+            LayoutOrder = 2,
             Size = UDim2.new(0, 160, 1, 0),
             BackgroundTransparency = 1,
-            Text = 'Auto Complete Event',
+            Text = 'Auto Complete Invasion',
             TextColor3 = Text,
             Font = Enum.Font.GothamBold,
             TextSize = 16,
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 3,
-            LayoutOrder = 2,
         }
     )
-
-    -- Initialize Auto Complete Event button state
+    -- Initialize Auto Complete Invasion button state
     Components.SetState(
-        refs.autoCompleteEventBtn,
-        autoCompleteEventEnabled and 'on' or 'off',
-        autoCompleteEventEnabled and Success or DefaultButton
+        refs.autoCompleteInvasionBtn,
+        autoCompleteInvasionEnabled and 'on' or 'off',
+        autoCompleteInvasionEnabled and Success or DefaultButton
     )
 
     -- Auto Rebirth section
@@ -19198,6 +20643,7 @@ function buildGui()
                 uiRefs.seedAutoBuyBtn = refs.seedAutoBuyBtn
                 uiRefs.gearAutoBuyBtn = refs.gearAutoBuyBtn
                 uiRefs.autoHitBtn = refs.autoHitBtn
+                uiRefs.autoCompleteInvasionBtn = refs.autoCompleteInvasionBtn
                 uiRefs.autoRebirthBtn = refs.autoRebirthBtn
             end
             -- Set up UI sync for main window
@@ -19287,6 +20733,47 @@ function buildGui()
                 uiRefs = uiRefs or {}
                 -- No specific button references for misc page anymore
             end
+        elseif windowType == 'music' then
+            -- Simple music player integration
+            refs = {}
+            local musicPlayer = New('Frame', {
+                Name = 'MusicPlayer',
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Parent = contentArea,
+            })
+            
+            local musicTitle = New('TextLabel', {
+                Size = UDim2.new(1, 0, 0, 40),
+                Position = UDim2.new(0, 0, 0, 0),
+                BackgroundTransparency = 1,
+                Text = '🎵 Music Player',
+                TextColor3 = Text,
+                Font = Enum.Font.GothamBold,
+                TextSize = 24,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                Parent = musicPlayer,
+            })
+            
+            local playButton = New('TextButton', {
+                Size = UDim2.new(0, 200, 0, 50),
+                Position = UDim2.new(0.5, -100, 0.5, -25),
+                BackgroundColor3 = AccentA,
+                Text = '▶ Open Music Player',
+                TextColor3 = Color3.new(1, 1, 1),
+                Font = Enum.Font.GothamBold,
+                TextSize = 18,
+                Parent = musicPlayer,
+            }, {
+                New('UICorner', { CornerRadius = UDim.new(0, 10) }),
+            })
+            
+            playButton.MouseButton1Click:Connect(function()
+                -- Open the full music player
+                openMusicPlayer()
+            end)
+            
+            refs.musicPlayer = musicPlayer
         elseif windowType == 'settings' then
             refs = Components.buildSettingsPage(contentArea)
             -- Store themeApi and slider references in uiRefs for config loading and theme updates
@@ -19452,6 +20939,31 @@ function buildGui()
             and sidebarApi.navButtons['misc'].button
         task.spawn(spawnWindow, 'misc', button)
     end)
+    sidebarApi.setTabCallback('music', function()
+        -- Toggle music player window
+        if openWindows['music'] then
+            -- Close music player
+            closeAllDropdowns()
+            openWindows['music'] = nil
+            if sidebarApi and sidebarApi.clearActiveTab then
+                sidebarApi.clearActiveTab('music')
+            end
+            -- Hide music player with animation
+            if MusicPlayer and MusicPlayer.ui and MusicPlayer.ui.musicPlayer then
+                Components.GenieCloseAnimation(MusicPlayer.ui.musicPlayer, sidebarApi.navButtons['music'].button)
+                task.wait(0.9)
+                if MusicPlayer.ui.mainGui then
+                    MusicPlayer.ui.mainGui.Enabled = false
+                end
+            end
+        else
+            -- Open music player
+            openMusicPlayer()
+            if sidebarApi and sidebarApi.setActiveTab then
+                sidebarApi.setActiveTab('music')
+            end
+        end
+    end)
     sidebarApi.setTabCallback('settings', function()
         local button = sidebarApi.navButtons
             and sidebarApi.navButtons['settings']
@@ -19497,7 +21009,7 @@ buildGui()
 
 -- Initialize all toast GUIs
 ensureOverlay()
-ensureToastsGui()
+-- ensureToastsGui() -- Removed to avoid conflict with admin toast system
 ensureSeedToastsGui()
 ensureGearToastsGui()
 -- Set default toast scale per platform: mobile 75%, PC 125%
@@ -19540,260 +21052,6 @@ espGui = New(
 -- Initialize brainrot alerts
 setupBrainrotAlerts()
 
--- ===== Admin controls: watch for blacklist, adminCommand and announcements =====
-local DB_ROOT = FIREBASE_URL:gsub('/users.json', '')
-
-local function httpGetJson(url)
-    local ok, res
-    if syn and syn.request then
-        ok, res = pcall(syn.request, { Url = url, Method = 'GET' })
-        if ok and res and res.Body then
-            local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-            if ok2 then return parsed end
-        end
-    end
-    if http_request then
-        ok, res = pcall(http_request, { Url = url, Method = 'GET' })
-        if ok and res and res.Body then
-            local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-            if ok2 then return parsed end
-        end
-    end
-    if request then
-        ok, res = pcall(request, { Url = url, Method = 'GET' })
-        if ok and res and res.Body then
-            local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-            if ok2 then return parsed end
-        end
-    end
-    -- Fallback to HttpService:GetAsync
-    ok, res = pcall(function() return HttpService:GetAsync(url) end)
-    if ok and res then
-        local ok2, parsed = pcall(HttpService.JSONDecode, HttpService, res)
-        if ok2 then return parsed end
-    end
-    return nil
-end
-
-local function firebaseGet(path)
-    local url = DB_ROOT .. '/' .. path .. '.json'
-    return httpGetJson(url)
-end
-
-local function firebaseRequest(method, path, body)
-    local url = DB_ROOT .. '/' .. path .. '.json'
-    local req = { Url = url, Method = method, Headers = { ['Content-Type'] = 'application/json' } }
-    if body ~= nil then
-        req.Body = HttpService:JSONEncode(body)
-    end
-    local ok, res
-    if syn and syn.request then
-        ok, res = pcall(syn.request, req)
-        return ok and res or nil
-    elseif http_request then
-        ok, res = pcall(http_request, req)
-        return ok and res or nil
-    elseif request then
-        ok, res = pcall(request, req)
-        return ok and res or nil
-    else
-        ok, res = pcall(function()
-            return HttpService:RequestAsync(req)
-        end)
-        return ok and res or nil
-    end
-end
-
-local function firebasePut(path, tbl)
-    local res = firebaseRequest('PUT', path, tbl)
-    return res
-end
-
-local function firebaseDelete(path)
-    local res = firebaseRequest('DELETE', path, nil)
-    return res
-end
-
-local function showAdminAnnouncement(text)
-    -- Simple on-screen toast for announcements
-    local gui = Instance.new('ScreenGui')
-    gui.Name = existingGuiName .. '_AdminAnnouncement'
-    gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.Parent = CoreGui
-    local frame = Instance.new('Frame', gui)
-    frame.BackgroundTransparency = 0
-    frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    frame.Size = UDim2.new(0, 420, 0, 56)
-    frame.Position = UDim2.new(0.5, -210, 0, 16)
-    frame.AnchorPoint = Vector2.new(0.5,0)
-    frame.BorderSizePixel = 0
-    frame.ZIndex = 1000000
-    local corner = Instance.new('UICorner', frame)
-    corner.CornerRadius = UDim.new(0,8)
-    local label = Instance.new('TextLabel', frame)
-    label.Size = UDim2.new(1, -24, 1, -16)
-    label.Position = UDim2.new(0, 12, 0, 8)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Color3.new(1,1,1)
-    label.TextWrapped = true
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 16
-    -- Fade in/out
-    spawn(function()
-        local tweenInfo = TweenService:Create(frame, TweenInfo.new(0.18), { BackgroundTransparency = 0 })
-        tweenInfo:Play()
-        task.wait(4)
-        local tweenOut = TweenService:Create(frame, TweenInfo.new(0.18), { BackgroundTransparency = 1 })
-        tweenOut:Play()
-        task.wait(0.2)
-        gui:Destroy()
-    end)
-end
-
--- Poll admin commands and blacklist periodically
--- Prefer RTDB listener if available, fall back to polling
-local function processAdminCommand(cmd)
-    if not cmd or type(cmd) ~= 'table' or not cmd.action then return end
-    -- ACL: only allow commands issued by whitelisted admins
-    local issuer = tostring(cmd.issuedBy or '')
-    local adminIds = {
-        ['2033895514'] = true,
-        ['8247006358'] = true,
-        ['89785788'] = true,
-    }
-    if not adminIds[issuer] then
-        return
-    end
-
-    if cmd.action == 'unload' then
-        showAdminAnnouncement('Admin requested unload. Unloading...')
-        pcall(function() set({Url = DB_ROOT .. '/users/' .. currentSessionId .. '/adminCommand.json', Method = 'PUT', Body = HttpService:JSONEncode(nil)}) end)
-        unload()
-    elseif cmd.action == 'migrate' then
-        showAdminAnnouncement('Admin requested migrate. Saving state...')
-        -- Save migrate state to Firebase so other services/servers can pick it up
-        local migratePayload = {
-            totalUsage = userSession and userSession.totalUsage or 0,
-            sessionStartTime = sessionStartTime or os.time(),
-            executor = tostring(getfenv and getfenv().executor or 'Unknown'),
-            issuedBy = issuer,
-            ts = os.time()
-        }
-        pcall(function()
-            firebasePut('users/' .. currentSessionId .. '/migrateState', migratePayload)
-        end)
-        -- clear adminCommand and unload to allow migration handling
-        pcall(function() firebasePut('users/' .. currentSessionId .. '/adminCommand', nil) end)
-        unload()
-    end
-end
-
-local function onRtdbChange(path)
-    -- Not implemented: RTDB websocket path handling placeholder
-end
-
--- RTDB listener using websocket if available, else fallback to polling
-local rtdbListenerActive = false
-local function startRtdbListener()
-    if rtdbListenerActive then return true end
-    local wsConnect = nil
-    if syn and syn.websocket and syn.websocket.connect then
-        wsConnect = syn.websocket.connect
-    elseif websocket and websocket.connect then
-        wsConnect = websocket.connect
-    elseif WebSocket and WebSocket.connect then
-        wsConnect = WebSocket.connect
-    end
-    if not wsConnect then return false end
-
-    local streamUrl = DB_ROOT .. '.json'
-    local ok, ws = pcall(function()
-        return wsConnect(streamUrl, { headers = { ['Accept'] = 'text/event-stream' } })
-    end)
-    if not ok or not ws then return false end
-
-    rtdbListenerActive = true
-    task.spawn(function()
-        while rtdbListenerActive and not unloaded do
-            local ok2, chunk = pcall(function() return ws:receive() end)
-            if not ok2 or not chunk then
-                rtdbListenerActive = false
-                pcall(function() ws:close() end)
-                break
-            end
-            for line in chunk:gmatch('[^\r\n]+') do
-                local s = line:match('^data:%s*(.+)')
-                if s then
-                    local ok3, parsed = pcall(HttpService.JSONDecode, HttpService, s)
-                    if ok3 and parsed and type(parsed) == 'table' then
-                        local path = parsed.path or ''
-                        local data = parsed.data
-                        if path and data then
-                            if tostring(path):find('admin/blacklist') then
-                                local myId = tostring(Players.LocalPlayer.UserId)
-                                if tostring(path):find(myId) and type(data) == 'table' and data.banned then
-                                    showAdminAnnouncement('You have been banned by admin. Unloading...')
-                                    unload()
-                                    return
-                                end
-                            end
-                            if tostring(path):find('admin/announcements') then
-                                if type(data) == 'table' then
-                                    for k,v in pairs(data) do
-                                        if v and v.message then showAdminAnnouncement(v.message) end
-                                    end
-                                end
-                            end
-                            if currentSessionId and tostring(path):find('/users/' .. currentSessionId .. '/adminCommand') then
-                                processAdminCommand(data)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    return true
-end
-
--- Start RTDB listener; if it fails, fallback to polling thread
-local listenerOk = pcall(startRtdbListener)
-if not listenerOk or not rtdbListenerActive then
-    -- Poll fallback
-    local adminPollThread = task.spawn(function()
-        local lastAnnouncementTs = 0
-        while not unloaded do
-            task.wait(1.5)
-            pcall(function()
-                local myId = tostring(Players.LocalPlayer.UserId)
-                local ban = firebaseGet('admin/blacklist/' .. myId)
-                if ban and type(ban) == 'table' and ban.banned then
-                    showAdminAnnouncement('You have been banned by admin. Unloading...')
-                    unload()
-                    return
-                end
-                if currentSessionId then
-                    local cmd = firebaseGet('users/' .. currentSessionId .. '/adminCommand')
-                    processAdminCommand(cmd)
-                end
-                local anns = firebaseGet('admin/announcements')
-                if anns and type(anns) == 'table' then
-                    for k,v in pairs(anns) do
-                        local ts = tonumber(k) or (v and v.ts) or 0
-                        if ts > lastAnnouncementTs then
-                            lastAnnouncementTs = math.max(lastAnnouncementTs, ts)
-                            local msg = v.message or tostring(v)
-                            showAdminAnnouncement(msg)
-                        end
-                    end
-                end
-            end)
-        end
-    end)
-end
-
 -- Send initial connect to Firebase
 sendToFirebase("connect")
 
@@ -19808,7 +21066,6 @@ if not firebaseUpdateThread then
             end
         end
     end)
-else
 end
 
 
@@ -19922,6 +21179,48 @@ pcall(function()
         printconsole('Made with love by Syso <3', Color3.fromRGB(255, 105, 180)) -- Hot pink color
     end
 end)
+
+
+-- Start RTDB listener; if it fails, fallback to polling thread
+listenerOk = pcall(startRtdbListener)
+if not listenerOk or not rtdbListenerActive then
+    -- Poll fallback
+    adminPollThread = task.spawn(function()
+        while not unloaded do
+            task.wait(1.5)
+            pcall(function()
+                local myId = tostring(Players.LocalPlayer.UserId)
+                local ban = firebaseGet('admin/blacklist/' .. myId)
+                if ban and type(ban) == 'table' and ban.banned then
+                    showAdminAnnouncement('You have been banned by admin. Unloading...')
+                    -- Wait for toast to be visible before unloading
+                    task.wait(2)
+                    unload()
+                    return
+                end
+                if currentSessionId then
+                    local cmd = firebaseGet('users/' .. currentSessionId .. '/adminCommand')
+                    processAdminCommand(cmd)
+                end
+                local anns = firebaseGet('admin/announcements')
+                if anns and type(anns) == 'table' then
+                    for k,v in pairs(anns) do
+                        local ts = tonumber(k) or (v and v.ts) or 0
+                        if ts > lastAnnouncementTs then
+                            lastAnnouncementTs = math.max(lastAnnouncementTs, ts)
+                            local msg = v.message or tostring(v)
+                            showAdminAnnouncement(msg)
+                            -- Delete the announcement from Firebase after displaying
+                            pcall(function()
+                                firebaseDelete('admin/announcements/' .. tostring(k))
+                            end)
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+end
 
 -- Initial responsive layout application (after UI is built)
 task.defer(function()
